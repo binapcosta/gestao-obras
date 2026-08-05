@@ -291,27 +291,59 @@ header{background:var(--surface-1);border-bottom:1px solid var(--border);padding
       <div class="step"><span class="step-num">3</span><span><strong>Implantar → Nova implantação</strong> → App da Web → Executar como: <strong>Eu</strong> → Acesso: <strong>Qualquer pessoa</strong></span></div>
       <div class="step"><span class="step-num">4</span><span>Copie a <strong>URL do App da Web</strong> e cole abaixo</span></div>
     </div>
-    <div class="code-block" onclick="copyCode(this)" title="Clique para copiar">function doPost(e) {
+    <div class="code-block" onclick="copyCode(this)" title="Clique para copiar">// Cria/usa uma planilha na SUA conta automaticamente.
+// Não depende de ID externo — evita erro de permissão.
+
+function getSheet_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('SHEET_ID');
+  var ss;
+  if (id) {
+    try { ss = SpreadsheetApp.openById(id); }
+    catch(e) { ss = null; }
+  }
+  if (!ss) {
+    ss = SpreadsheetApp.create('Custos de Obra — Dashboard');
+    props.setProperty('SHEET_ID', ss.getId());
+  }
+  var sheet = ss.getSheetByName('Historico') || ss.insertSheet('Historico');
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['Data/Hora','Obra','Categoria','Item','Orçado (R$)','Realizado (R$)','Desvio (R$)','Venda (R$)','Imposto (R$)','Lucro Liq (R$)','Margem (%)','Status']);
+    sheet.getRange(1,1,1,12).setFontWeight('bold').setBackground('#e8f0fe');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function doPost(e) {
   try {
-    var data = JSON.parse(e.postData.contents);
-    var ss = SpreadsheetApp.openById(data.sheetId);
-    var sheet = ss.getSheetByName('Historico') || ss.insertSheet('Historico');
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Data/Hora','Obra','Categoria','Item','Orçado (R$)','Realizado (R$)','Desvio (R$)','Venda (R$)','Imposto (R$)','Lucro Liq (R$)','Margem (%)']);
-      sheet.getRange(1,1,1,11).setFontWeight('bold').setBackground('#e8f0fe');
-    }
+    var raw = (e.parameter && e.parameter.payload) ? e.parameter.payload
+              : (e.postData ? e.postData.contents : null);
+    if (!raw) throw new Error('Payload vazio');
+    var data = JSON.parse(raw);
+    var sheet = getSheet_();
     data.rows.forEach(function(r){ sheet.appendRow(r); });
-    return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+    return ContentService
+      .createTextOutput(JSON.stringify({ok:true, linhas:data.rows.length, sheetUrl:sheet.getParent().getUrl()}))
+      .setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({ok:false,erro:err.toString()})).setMimeType(ContentService.MimeType.JSON);
+    return ContentService
+      .createTextOutput(JSON.stringify({ok:false, erro:err.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
+
 function doGet(e) {
-  var sheetId = e.parameter.sheetId;
-  var ss = SpreadsheetApp.openById(sheetId);
-  var sheet = ss.getSheetByName('Historico');
-  if (!sheet) return ContentService.createTextOutput(JSON.stringify({rows:[]})).setMimeType(ContentService.MimeType.JSON);
-  return ContentService.createTextOutput(JSON.stringify({rows:sheet.getDataRange().getValues()})).setMimeType(ContentService.MimeType.JSON);
+  try {
+    var sheet = getSheet_();
+    return ContentService
+      .createTextOutput(JSON.stringify({rows:sheet.getDataRange().getValues(), sheetUrl:sheet.getParent().getUrl()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({rows:[], erro:err.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 }</div>
     <div class="copy-hint">↑ Clique no código para copiar</div>
     <div class="url-row">
@@ -844,9 +876,30 @@ function saveToSheets(){
     (o.cats[cat]||[]).forEach(r=>rows.push([now,proj,LABELS[cat],r.name||'—',parseFloat(r.bud)||'',parseFloat(r.val)||0,r.bud?(parseFloat(r.val)||0)-(parseFloat(r.bud)||0):'','','','','','']));
     rows.push([now,proj,LABELS[cat]+' (subtotal)','',rb>0?Math.round(rb):'',Math.round(rr),rb>0?Math.round(rr-rb):'','','','','','']);
   });
-  fetch(scriptUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({sheetId:SHEET_ID,rows}),mode:'no-cors'})
-    .then(()=>{setSyncStatus('ok','salvo às '+new Date().toLocaleTimeString('pt-BR'));saveAll();})
-    .catch(()=>setSyncStatus('err','erro ao salvar'));
+  // FormData evita preflight CORS e chega ao Apps Script via e.parameter
+  const fd = new FormData();
+  fd.append('payload', JSON.stringify({rows: rows}));
+
+  fetch(scriptUrl, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(res => {
+      if (res && res.ok) {
+        setSyncStatus('ok', 'salvo às ' + new Date().toLocaleTimeString('pt-BR'));
+        saveAll();
+        if (res.sheetUrl) {
+          localStorage.setItem('obra_sheet_url', res.sheetUrl);
+          const lk = document.getElementById('sheetsLink');
+          if (lk) { lk.href = res.sheetUrl; lk.style.display = 'flex'; }
+        }
+      } else {
+        setSyncStatus('err', 'erro: ' + (res && res.erro ? res.erro : 'desconhecido'));
+        console.error('Apps Script retornou erro:', res);
+      }
+    })
+    .catch(err => {
+      setSyncStatus('err', 'falha na conexão');
+      console.error('Erro ao salvar no Sheets:', err);
+    });
 }
 
 async function loadHistory(){
