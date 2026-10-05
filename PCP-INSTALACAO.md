@@ -1,28 +1,26 @@
-# Gestão de Obras — PCP
+# Instalação do PCP com acesso Google
+Esta versão usa o painel hospedado no Apps Script. O GitHub mantém o código; o GitHub Pages não conecta à nova API autenticada. O envio de e-mails ainda não foi ativado.
 
-Esta versão mantém a interface financeira e acrescenta passagem da proposta, atividades, dependências, datas reais, horas, quantidades e previsão do custo final. O cronograma considera dias corridos, uma predecessora por atividade e alertas; não faz reprogramação automática nem cálculo de caminho crítico.
+1. Faça backup das obras no site atual e da planilha. Os dados locais não aparecem automaticamente no novo endereço. Salve as obras na base compartilhada antes da troca; se a nova API já estiver ativada, mantenha o backup e importe os dados somente após preparar uma rotina de importação.
+2. No projeto Apps Script, substitua Code.gs e crie um arquivo HTML chamado Painel, com o conteúdo de apps-script/Painel.html.
+3. Configure nas Propriedades do script:
+   - SHEET_ID: ID da planilha existente, sem URL.
+   - ADMIN_EMAIL: binapcosta@gmail.com
+   - ALLOWED_EMAILS: binapcosta@gmail.com,aleksanderlotto@gmail.com,instalacaocpsrj@gmail.com,manutencaocpsrj@gmail.com,projetocps15@gmail.com
+   A lista pode ser alterada aqui, sem editar o código. Não use e-mail recebido do navegador para autorizar.
+4. Compartilhe a planilha como editor com as quatro contas da equipe. Como a implantação executa pelo usuário, ele precisa de acesso à base. Esses usuários também poderão editar diretamente a planilha, fora do controle de revisão do painel. Quem precisa apenas de consulta não deve receber esse acesso nesta versão.
+5. Crie uma nova implantação Web: Executar como **Usuário que acessa o aplicativo**; acesso para usuários com conta Google (conforme opções da interface). Não use Executar como eu. Cada usuário deverá autorizar os serviços solicitados. Pode haver aviso de aplicativo não verificado, conforme configuração do projeto.
+6. Abra a URL /exec com uma conta da lista e teste salvar e carregar. Depois teste uma conta fora da lista: não deve acessar o painel nem os dados.
+7. Após confirmar a nova implantação, arquive as implantações antigas em Gerenciar implantações. Publicar uma versão nova não desativa URLs antigas que ainda usam código sem proteção.
+8. Na conta administradora, execute instalarBackupDiario no editor e confira a cópia no Drive. Apenas a administradora pode instalar/executar o backup; o gatilho continua nessa conta até a futura migração.
 
-## Atualização
+## Atualização do painel
+Altere index.html, pcp.js e compasss.css; execute `node build-apps-script.cjs` na raiz para gerar Painel.html. Copie o painel gerado ao Apps Script e atualize a implantação.
 
-1. Faça backup dos dados antes de atualizar. A nova interface oferece Backup das obras.
-2. No Apps Script existente, substitua o código por apps-script/Code.gs. Em Configurações do projeto → Propriedades do script, configure SHEET_ID com o ID da planilha existente. Não execute o antigo resetPlanilha.
-3. Atualize a implantação do aplicativo da Web. Esta versão usa as permissões da implantação; não inclui autenticação própria na página GitHub Pages. Não publique a API de custos para acesso anônimo.
-4. Publique index.html e pcp.js juntos, na mesma pasta. Utilize a URL /exec na configuração existente.
-5. Abra no mesmo navegador e endereço em que as obras estavam cadastradas. Abra cada obra e clique em Salvar no Sheets para transferir o cadastro completo.
-6. Em outro dispositivo, configure a URL e use Carregar obras do Sheets.
+## Operação
+Salvamento por obra e carregamento manual. Faça backup antes de carregar: registros locais com mesmo ID serão substituídos. Em conflito de revisão, carregue a versão compartilhada e reaplique a mudança. Exclusão de obra permanece local. Histórico antigo fica em Historico; estados novos ficam em Obras_PCP e Versoes_PCP. Dados locais continuam no navegador; use perfis separados em computadores compartilhados. A mudança para a conta corporativa exigirá conferir base, propriedades, permissões, gatilhos e implantação.
 
-## Operação e limites
+O cronograma usa dias corridos e uma predecessora por atividade, sem caminho crítico ou reprogramação automática. Custo final = realizado + comprometido ainda não realizado + restante ainda não contratado. Horas não geram custo automaticamente. Limite de 45.000 caracteres por obra.
 
-- O salvamento completo usa a aba Obras_PCP. O carregamento é manual e substitui registros locais com o mesmo ID após confirmação.
-- Edições simultâneas são detectadas por revisão. Em conflito, faça backup, carregue a versão compartilhada e reaplique a alteração.
-- A exclusão de obra permanece apenas local; não exclui o registro compartilhado.
-- O histórico financeiro antigo é preservado; novos salvamentos não acrescentam fotografias à aba Historico. Obras_PCP mantém a versão atual.
-- A linha de base preserva o planejamento inicial. A previsão de término e os apontamentos reais continuam editáveis.
-- Custo final = realizado + comprometido ainda não realizado + restante ainda não contratado. Não repita despesas entre parcelas.
-- Horas apontadas não geram custo automaticamente. Informe o custo na área financeira.
-- O avanço físico depende de horas e quantidades positivas em todas as atividades.
-- Limite de armazenamento: 45.000 caracteres por obra.
-
-## Validação em produção
-
-Teste com uma obra de exemplo: salvar, carregar em outro navegador, registrar linha de base, informar atraso e editar simultaneamente. Autenticação, permissões, CORS e gravação real dependem da implantação do Apps Script e precisam ser verificados no ambiente da equipe.
+## Verificação
+`node check.cjs` e `node auth-check.cjs` verificam lógica e bloqueios com serviços simulados. Login OAuth, permissão real, armazenamento no navegador, impressão e gatilhos precisam de teste na implantação Google. Não há validação de produção concluída.
