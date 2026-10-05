@@ -54,7 +54,12 @@ function pcpMetrics(o){
     final:obraTotal(o)+(p.comprometido||0)+(p.restante||0)};
 }
 function renderPCP(){
-  const panel=document.getElementById('pcpPanel'); panel.replaceChildren();
+  const panel=document.getElementById('pcpPanel');
+  const openTasks = panel.dataset.obraId === currentObraId
+    ? new Set(Array.from(panel.querySelectorAll('details[open]')).map(el => el.dataset.taskId))
+    : new Set();
+  panel.dataset.obraId = currentObraId || '';
+  panel.replaceChildren();
   const o=obras[currentObraId]; if(!o)return;
   const p=pcpState(o), m=pcpMetrics(o);
   pcpElement('h2','PCP — prazo e custo para concluir',panel);
@@ -87,6 +92,8 @@ function renderPCP(){
   if(errors.length)pcpElement('p',errors.join(' '),panel).style.color='var(--red)';
   p.tarefas.forEach(t=>{
     const card=pcpElement('details',undefined,panel);card.className='card';card.style.marginBottom='10px';
+    card.dataset.taskId=t.id;
+    card.open=openTasks.has(t.id);
     pcpElement('summary',t.nome+' — '+(t.responsavel||'Sem responsável'),card);
     const fields=pcpElement('div',undefined,card);fields.className='fin-grid';
     [['nome','Atividade','text'],['responsavel','Responsável','text'],
