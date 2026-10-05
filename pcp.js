@@ -199,11 +199,14 @@ function printClientSchedule(){
   const doc=win.document;
   doc.title='Cronograma — '+o.nome;
   const style=doc.createElement('style');
-  style.textContent='@page{size:A4 landscape;margin:12mm}body{font:12px Arial,sans-serif;color:#202020;--bg:#eee;--text-accent:#1a5fb4;margin:24px}h1{font-size:22px;color:#1a5fb4}h2,h3{font-size:15px;margin-top:24px}header{border-bottom:2px solid #1a5fb4;padding-bottom:12px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left;overflow-wrap:anywhere}th{background:#eef3fa}thead{display:table-header-group}tr{break-inside:avoid}button{padding:10px 18px;background:#1a5fb4;color:white;border:0;margin-bottom:18px;cursor:pointer}.meta{line-height:1.7}.gantt{break-before:page}.gantt p{margin:8px 0 4px}footer{margin-top:24px;color:#666;font-size:11px}@media print{body{margin:0}button{display:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}';
+  style.textContent='@page{size:A4 landscape;margin:12mm}body{font:12px 'Open Sans',Arial,sans-serif;color:#202020;--bg:#eee;--text-accent:#406E2A;margin:24px}h1{font-size:22px;color:#406E2A}h2,h3{font-size:15px;margin-top:24px}header{border-bottom:2px solid #406E2A;padding-bottom:12px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left;overflow-wrap:anywhere}th{background:#E9F4E6}thead{display:table-header-group}tr{break-inside:avoid}button{padding:10px 18px;background:#406E2A;color:white;border:0;margin-bottom:18px;cursor:pointer}.meta{line-height:1.7}.gantt{break-before:page}.gantt p{margin:8px 0 4px}footer{margin-top:24px;color:#666;font-size:11px}@media print{body{margin:0}button{display:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}';
   doc.head.appendChild(style);
+  const fonts=doc.createElement('link');fonts.rel='stylesheet';fonts.href='https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Open+Sans:wght@400;600&display=swap';doc.head.appendChild(fonts);
+  const titles=doc.createElement('style');titles.textContent='h1,h2,h3,th{font-family:Montserrat,Arial,sans-serif}th{background:#406E2A;color:#FFFFFF}tbody tr:nth-child(even){background:#F8FAFC}';doc.head.appendChild(titles);
   const root=doc.body;
   const button=pcpElement('button','Imprimir / Salvar PDF',root);button.onclick=()=>win.print();
   const head=pcpElement('header',undefined,root);
+  const logo=doc.createElement('img');logo.src=document.getElementById('companyLogo').src;logo.alt='CompaSSS Tecnologia';logo.style.cssText='width:210px;height:auto;margin-bottom:12px';head.appendChild(logo);
   pcpElement('h1','CompaSSS | Cronograma de implantação',head);
   pcpElement('h2',o.nome,head);
   const date=new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
