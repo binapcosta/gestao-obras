@@ -79,6 +79,8 @@ function renderPCP(){
   pcpElement('h3','Cronograma — dias corridos',panel);
   pcpElement('p','Dependências geram alertas; as datas não são deslocadas automaticamente. A linha de base preserva o primeiro planejamento.',panel);
   const actions=pcpElement('div',undefined,panel);actions.className='actions-row';
+  const print=pcpElement('button','Imprimir cronograma para cliente',actions);print.className='btn';
+  print.onclick=printClientSchedule;
   const add=pcpElement('button','Adicionar atividade',actions);add.className='btn';add.disabled=!!p.baseline;
   add.onclick=()=>{p.tarefas.push({id:crypto.randomUUID(),nome:'Nova atividade',responsavel:'',qtd:1,qtdReal:0,horas:0,horasReal:0});saveAll();renderPCP();};
   const base=pcpElement('button',p.baseline?'Linha de base registrada':'Registrar linha de base',actions);base.className='btn';base.disabled=!!p.baseline;
@@ -177,3 +179,40 @@ const shared=document.createElement('div');shared.className='actions-row';
   const b=pcpElement('button',text,shared);b.className='btn';b.onclick=fn;
 });
 document.getElementById('homeScreen').prepend(shared);
+
+
+function printClientSchedule(){
+  saveCurrent();
+  const o=obras[currentObraId]; if(!o)return;
+  const p=pcpState(o);
+  if(!p.tarefas.length){alert('Cadastre atividades antes de imprimir o cronograma.');return;}
+  const errors=pcpErrors(p);
+  if(errors.length){alert('Resolva os alertas antes de emitir o cronograma:\n'+errors.join('\n'));return;}
+  const win=window.open('','_blank');
+  if(!win){alert('Permita pop-ups para visualizar o cronograma.');return;}
+  const doc=win.document;
+  doc.title='Cronograma — '+o.nome;
+  const style=doc.createElement('style');
+  style.textContent='@page{size:A4 landscape;margin:12mm}body{font:12px Arial,sans-serif;color:#202020;--bg:#eee;--text-accent:#1a5fb4;margin:24px}h1{font-size:22px;color:#1a5fb4}h2,h3{font-size:15px;margin-top:24px}header{border-bottom:2px solid #1a5fb4;padding-bottom:12px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left;overflow-wrap:anywhere}th{background:#eef3fa}thead{display:table-header-group}tr{break-inside:avoid}button{padding:10px 18px;background:#1a5fb4;color:white;border:0;margin-bottom:18px;cursor:pointer}.meta{line-height:1.7}.gantt{break-before:page}.gantt p{margin:8px 0 4px}footer{margin-top:24px;color:#666;font-size:11px}@media print{body{margin:0}button{display:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}';
+  doc.head.appendChild(style);
+  const root=doc.body;
+  const button=pcpElement('button','Imprimir / Salvar PDF',root);button.onclick=()=>win.print();
+  const head=pcpElement('header',undefined,root);
+  pcpElement('h1','CompaSSS | Cronograma de implantação',head);
+  pcpElement('h2',o.nome,head);
+  const date=new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  pcpElement('p','Proposta: '+(p.passagem.proposta||'Não informada')+' | Emitido em: '+date,head).className='meta';
+  pcpElement('p','Datas em dias corridos. Previsão atual de término apresentada quando cadastrada.',root);
+  const table=pcpElement('table',undefined,root),thead=pcpElement('thead',undefined,table),tr=pcpElement('tr',undefined,thead);
+  ['Atividade','Responsável','Início planejado','Fim planejado','Previsão atual','Início real','Fim real'].forEach(label=>pcpElement('th',label,tr));
+  const tbody=pcpElement('tbody',undefined,table);
+  function dateBR(v){return Number.isFinite(pcpDate(v))?v.split('-').reverse().join('/'):'—';}
+  p.tarefas.forEach(t=>{
+    const row=pcpElement('tr',undefined,tbody);
+    [t.nome,t.responsavel||'—',dateBR(t.inicio),dateBR(t.fim),dateBR(t.previsao),dateBR(t.inicioReal),dateBR(t.fimReal)].forEach(v=>pcpElement('td',v,row));
+  });
+  const gantt=pcpElement('section',undefined,root);gantt.className='gantt';
+  renderGantt(gantt,p);
+  pcpElement('footer','CompaSSS Tecnologia · '+o.nome+' · '+date,root);
+  win.focus();
+}
