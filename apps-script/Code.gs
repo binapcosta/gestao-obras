@@ -57,12 +57,53 @@ function doPost(e){
     var revision=index<0?0:Number(rows[index][1]);
     if(index>=0&&rows[index][2]===data.requestId)return json_({ok:true,revision:revision,sheetUrl:ss.getUrl()});
     if(Number(data.obra._revision||0)!==revision)throw new Error('Conflito: outra pessoa atualizou a obra. Faça backup e carregue a versão do Sheets.');
+    var previous=index<0?null:JSON.parse(rows[index][3]);
+    var audit=ss.getSheetByName('Versoes_PCP')||ss.insertSheet('Versoes_PCP');
+    if(!audit.getLastRow()){audit.appendRow(['Data UTC','Obra ID','Revisão','Request ID','Usuário identificado','Estado anterior JSON','Estado novo JSON','Campos alterados','Estado']);audit.setFrozenRows(1);}
+    var auditRow=audit.getLastRow()+1;
     data.obra._revision=revision+1;
+    audit.getRange(auditRow,1,1,9).setValues([[new Date().toISOString(),data.obra.id,revision+1,data.requestId,Session.getActiveUser().getEmail()||'Não identificado pela implantação',previous?JSON.stringify(previous):'',JSON.stringify(data.obra),changedFields_(previous,data.obra).join(', '),'PREPARADO']]);
+    SpreadsheetApp.flush();
     sh.getRange(index<0?sh.getLastRow()+1:index+1,1,1,5).setValues([[
       data.obra.id,revision+1,data.requestId,JSON.stringify(data.obra),new Date().toISOString()
     ]]);
     SpreadsheetApp.flush();
-    return json_({ok:true,revision:revision+1,sheetUrl:ss.getUrl()});
+    var auditWarning='';
+    try{audit.getRange(auditRow,9).setValue('GRAVADO');SpreadsheetApp.flush();}catch(logErr){auditWarning='Obra salva; confirmação do histórico pendente.';}
+    return json_({ok:true,revision:revision+1,sheetUrl:ss.getUrl(),aviso:auditWarning});
   }catch(err){return json_({ok:false,erro:err.message});}
   finally{if(lock.hasLock())lock.releaseLock();}
+}
+
+function changedFields_(before,after){
+  var fields=Object.keys(after).filter(function(k){return k!=='_revision';});
+  if(before)fields=fields.concat(Object.keys(before).filter(function(k){return k!=='_revision';}));
+  return fields.filter(function(k,i,a){return a.indexOf(k)===i&&JSON.stringify(before&&before[k])!==JSON.stringify(after[k]);});
+}
+// Executar no editor para ativar. Não é chamada pela API pública.
+function instalarBackupDiario(){
+  var props=PropertiesService.getScriptProperties();
+  if(!props.getProperty('BACKUP_FOLDER_ID')){
+    var folder=DriveApp.createFolder('CompaSSS — Backups PCP');
+    props.setProperty('BACKUP_FOLDER_ID',folder.getId());
+  }
+  var exists=ScriptApp.getProjectTriggers().some(function(t){return t.getHandlerFunction()==='backupDiarioPCP';});
+  if(!exists)ScriptApp.newTrigger('backupDiarioPCP').timeBased().everyDays(1).atHour(2).inTimezone('America/Sao_Paulo').create();
+  return backupDiarioPCP();
+}
+function backupDiarioPCP(){
+  var lock=LockService.getScriptLock();
+  try{
+    lock.waitLock(30000);
+    var props=PropertiesService.getScriptProperties(),folderId=props.getProperty('BACKUP_FOLDER_ID');
+    if(!folderId)throw new Error('Execute instalarBackupDiario no editor.');
+    var ss=database_(),date=Utilities.formatDate(new Date(),'America/Sao_Paulo','yyyy-MM-dd');
+    var key=ss.getId()+':'+date;
+    if(props.getProperty('LAST_BACKUP_KEY')===key)return;
+    var copy=DriveApp.getFileById(ss.getId()).makeCopy('PCP_'+date,DriveApp.getFolderById(folderId));
+    props.setProperty('LAST_BACKUP_KEY',key);
+    props.setProperty('LAST_BACKUP_URL',copy.getUrl());
+    console.log('Backup criado: '+copy.getUrl());
+    return copy.getUrl();
+  }finally{if(lock.hasLock())lock.releaseLock();}
 }
