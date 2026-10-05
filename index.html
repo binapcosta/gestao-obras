@@ -383,13 +383,13 @@ function doGet(e) {
       <div class="fin-result custo"><div class="fin-result-label">Custo total</div><div class="fin-result-value" id="frCusto">R$ 0</div><div class="fin-result-sub" id="frCustoPct">—</div></div>
       <div class="fin-result impostos"><div class="fin-result-label">Impostos</div><div class="fin-result-value" id="frImpostos">R$ 0</div><div class="fin-result-sub" id="frImpostosPct">—</div></div>
       <div class="fin-result margem"><div class="fin-result-label">Margem bruta</div><div class="fin-result-value" id="frMargem">R$ 0</div><div class="fin-result-sub" id="frMargemPct">—</div></div>
-      <div class="fin-result lucro-pos" id="frLucroCard"><div class="fin-result-label">Lucro líquido</div><div class="fin-result-value" id="frLucro">R$ 0</div><div class="fin-result-sub" id="frLucroPct">—</div></div>
+      <div class="fin-result lucro-pos" id="frLucroCard"><div class="fin-result-label">Resultado após custos e impostos</div><div class="fin-result-value" id="frLucro">R$ 0</div><div class="fin-result-sub" id="frLucroPct">—</div></div>
     </div>
     <div class="fin-bar"><div class="fin-bar-fill" id="finBarFill"></div></div>
     <div class="fin-bar-legend">
       <span class="legend-item"><span class="fb-dot" style="background:#f59e0b"></span>Custo</span>
       <span class="legend-item"><span class="fb-dot" style="background:#ec4899"></span>Impostos</span>
-      <span class="legend-item"><span class="fb-dot" style="background:#22c55e"></span>Lucro líquido</span>
+      <span class="legend-item"><span class="fb-dot" style="background:#22c55e"></span>Resultado após custos e impostos</span>
     </div>
   </div>
 
@@ -909,7 +909,7 @@ async function loadHistory(){
   try{
     const r=await fetch(scriptUrl+'?sheetId='+SHEET_ID,{mode:'cors'});
     const d=await r.json();
-    const rows=(d.rows||[]).filter(r=>r[2]==='TOTAL').slice(1);
+    const rows=(d.rows||[]).filter(r=>r[2]==='TOTAL');
     if(!rows.length){el.innerHTML='<div class="hist-empty">Nenhum registro ainda.</div>';return;}
     let html='<table class="hist-table"><thead><tr><th>Data</th><th>Obra</th><th>Status</th><th style="text-align:right">Custo</th><th style="text-align:right">Venda</th><th style="text-align:right">Lucro</th><th style="text-align:right">Margem</th></tr></thead><tbody>';
     rows.slice().reverse().forEach(r=>{
@@ -1073,7 +1073,7 @@ function printReport() {
     <div class="pct">sobre a venda</div>
   </div>
   <div class="fin-box lucro">
-    <div class="lbl">Lucro líquido</div>
+    <div class="lbl">Resultado após custos e impostos</div>
     <div class="val" style="color:${lucroCor}">${fmtP(lucro)}</div>
     <div class="pct">${venda > 0 ? 'margem de ' + Math.round(lucro/venda*100) + '%' : '—'}</div>
   </div>
@@ -1084,7 +1084,7 @@ function printReport() {
   <div class="wf-row"><span>(−) Custo total da obra</span><span style="color:#c0392b">−${fmtP(custo)}</span></div>
   <div class="wf-row"><span>(=) Margem bruta</span><span>${fmtP(margem)}</span></div>
   <div class="wf-row"><span>(−) Impostos sobre venda (${impPct}%)</span><span style="color:#c0392b">−${fmtP(impVal)}</span></div>
-  <div class="wf-row total"><span>(=) Lucro líquido</span><span style="color:${lucroCor}">${fmtP(lucro)}</span></div>
+  <div class="wf-row total"><span>(=) Resultado após custos e impostos</span><span style="color:${lucroCor}">${fmtP(lucro)}</span></div>
 </div>
 
 <h2>Distribuição de Custos</h2>
@@ -1138,7 +1138,7 @@ function exportCSV(){
   rows.push([]);rows.push(['RESULTADO FINANCEIRO']);
   rows.push(['Valor de venda','',Math.round(venda)]);
   rows.push(['Impostos ('+impPct+'%)','',Math.round(impVal)]);
-  rows.push(['Lucro líquido','',Math.round(lucro)]);
+  rows.push(['Resultado após custos e impostos','',Math.round(lucro)]);
   rows.push(['Margem','',venda>0?Math.round(lucro/venda*100)+'%':'—']);
   const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
@@ -1158,23 +1158,7 @@ function migrateOldData() {
       const p = JSON.parse(raw);
       const nome = (p.project && p.project.trim()) ? p.project.trim() : 'Obra importada (' + key + ')';
       const id = 'obra_migrated_' + key;
-      if (obras[id]) {
-        // Já existe: atualiza cats para garantir dados frescos
-        const cats = p.data || {};
-        if (!cats.eq) cats.eq = [];
-        if (!cats.ter) cats.ter = [];
-        if (!cats.inf) cats.inf = [];
-        if (!cats.cab) cats.cab = [];
-        if (!cats.cmp) cats.cmp = [];
-        obras[id].cats = cats;
-        obras[id].idCt = p.idCt || 0;
-        obras[id].venda = parseFloat(p.venda) || 0;
-        obras[id].impostoPct = parseFloat(p.impostoPct) || 0;
-        obras[id].nome = nome;
-        changed = true;
-        console.log('[MIGR] Atualizado:', id, nome);
-        continue;
-      }
+      if (obras[id]) continue; // Preserva alterações já feitas.
       // Nova migração
       const cats = p.data || {};
       if (!cats.eq) cats.eq = [];
@@ -1212,5 +1196,6 @@ if(scriptUrl) activateSheets();
 renderHome();
 
 </script>
+<script src="pcp.js"></script>
 </body>
 </html>
