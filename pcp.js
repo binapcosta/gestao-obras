@@ -13,7 +13,8 @@ function pcpInput(parent,label,value,type,change,disabled=false) {
   const wrap=pcpElement('label',undefined,parent); wrap.className='form-field';
   pcpElement('span',label,wrap).className='form-label';
   const input=pcpElement(type==='textarea'?'textarea':'input',undefined,wrap);
-  if(type!=='textarea') input.type=type;
+  if(type!=='textarea') input.type=type==='emails'?'email':type;
+  if(type==='emails') input.multiple=true;
   input.className='form-input'; input.value=value??''; input.disabled=disabled;
   if(type==='number'){input.min='0';input.step='0.01';}
   input.addEventListener('change',()=>{
@@ -76,6 +77,11 @@ function renderPCP(){
    ['premissas','Premissas e exclusões'],['pendencias','Pendências / responsável / prazo']].forEach(([key,label])=>{
     pcpInput(handoff,label,p.passagem[key],'textarea',v=>p.passagem[key]=v);
   });
+  pcpElement('h3','Responsáveis e destinatários dos alertas',panel);
+  const contacts=pcpElement('div',undefined,panel);contacts.className='fin-grid';
+  pcpInput(contacts,'E-mail do gestor',p.passagem.emailGestor,'email',v=>p.passagem.emailGestor=v);
+  pcpInput(contacts,'E-mails para resumo do PCP (separados por vírgula)',p.passagem.emailsPCP,'emails',v=>p.passagem.emailsPCP=v);
+  pcpElement('p','Cadastre o responsável e o e-mail em cada atividade. Os contatos são salvos com a obra; o envio automático ainda não está ativado.',panel);
   pcpElement('h3','Cronograma — dias corridos',panel);
   pcpElement('p','Dependências geram alertas; as datas não são deslocadas automaticamente. A linha de base preserva o primeiro planejamento.',panel);
   const actions=pcpElement('div',undefined,panel);actions.className='actions-row';
@@ -98,7 +104,7 @@ function renderPCP(){
     card.open=openTasks.has(t.id);
     pcpElement('summary',t.nome+' — '+(t.responsavel||'Sem responsável'),card);
     const fields=pcpElement('div',undefined,card);fields.className='fin-grid';
-    [['nome','Atividade','text'],['responsavel','Responsável','text'],
+    [['nome','Atividade','text'],['responsavel','Responsável','text'],['emailResponsavel','E-mail do responsável','email'],
       ['inicio','Início planejado','date'],['fim','Fim planejado','date'],['previsao','Previsão atual de término','date'],
       ['inicioReal','Início real','date'],['fimReal','Fim real','date'],
       ['qtd','Quantidade prevista','number'],['qtdReal','Quantidade concluída','number'],
