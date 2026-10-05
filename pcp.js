@@ -151,7 +151,7 @@ function pcpBackup(){
 async function pcpLoad(){
   if(!scriptUrl){alert('Configure a URL do Apps Script.');return;}
   try {
-    const res=await fetch(scriptUrl+'?action=obras');const d=await res.json();
+    const d=window.pcpRpc?await window.pcpRpc('obras') : await (await fetch(scriptUrl+'?action=obras')).json();
     if(!d.ok||!Array.isArray(d.obras))throw new Error(d.erro||'Atualize o Apps Script para a versão PCP.');
     if(!confirm('Carregar a versão compartilhada substituirá as obras locais com o mesmo ID. Faça backup antes. Continuar?'))return;
     saveCurrent();d.obras.forEach(o=>obras[o.id]=o);saveAll();goHome();
@@ -168,7 +168,8 @@ async function pcpSave(){
   const sent=JSON.parse(JSON.stringify(o));
   const fd=new FormData();fd.append('payload',JSON.stringify({action:'salvarObra',obra:sent,requestId:crypto.randomUUID()}));
   try{
-    const r=await fetch(scriptUrl,{method:'POST',body:fd});const d=await r.json();
+    const payload=JSON.parse(fd.get('payload'));
+    const d=window.pcpRpc?await window.pcpRpc('salvarObra',payload) : await (await fetch(scriptUrl,{method:'POST',body:fd})).json();
     if(!d.ok)throw new Error(d.erro||'Falha no salvamento.');
     o._revision=d.revision;saveAll();
     if(d.sheetUrl){localStorage.setItem('obra_sheet_url',d.sheetUrl);document.getElementById('sheetsLink').href=d.sheetUrl;}
