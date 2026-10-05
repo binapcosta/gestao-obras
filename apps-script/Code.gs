@@ -38,7 +38,7 @@ function database_() {
 }
 function tab_(ss){
   var sh=ss.getSheetByName('Obras_PCP')||ss.insertSheet('Obras_PCP');
-  if(!sh.getLastRow()){sh.appendRow(['ID','Revisão','Request ID','JSON','Atualizado']);sh.setFrozenRows(1);}
+  if(!sh.getLastRow()){sh.getRange(1,1,1,5).setValues([['ID','Revisão','Request ID','JSON','Atualizado']]);sh.setFrozenRows(1);}
   return sh;
 }
 function json_(data){return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);}
