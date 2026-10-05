@@ -26,5 +26,11 @@ const endBody=html.lastIndexOf('</body>');
 html=html.slice(0,endBody)+`<script>
 document.getElementById('setupCard').textContent='Conexão pelo login Google. Use Carregar obras do Sheets para obter a versão compartilhada.';
 </script>`+html.slice(endBody);
+// HtmlService pode reinterpretar marcação contida nas strings dos relatórios.
+// Transporte UTF-8 preserva o código; o navegador cria os scripts em ordem.
+html=html.replace(/<script>([\s\S]*?)<\/script>/g,(_,source)=>{
+ const encoded=Buffer.from(source,'utf8').toString('base64');
+ return '<script>(function(){var source=new TextDecoder().decode(Uint8Array.from(atob("'+encoded+'"),function(c){return c.charCodeAt(0);}));var script=document.createElement("script");script.textContent=source;document.head.appendChild(script);})();</script>';
+});
 fs.writeFileSync('apps-script/Painel.html',html);
 console.log('Painel.html gerado.');
