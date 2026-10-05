@@ -1,0 +1,12 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const js=fs.readFileSync('pcp.js','utf8');
+const ctx={console,Intl,Date,Map,Set,Number,obras:{},obraTotal:o=>100};vm.createContext(ctx);
+vm.runInContext(js.slice(0,js.indexOf('const originalOpenDash')),ctx);
+const p={tarefas:[{id:'a',nome:'Instalação',inicio:'2026-10-01',fim:'2026-10-02',qtd:10,qtdReal:5,horas:20,horasReal:12},{id:'b',nome:'Teste',predecessora:'a',inicio:'2026-10-03',fim:'2026-10-04',qtd:1,qtdReal:0,horas:10}],comprometido:40,restante:60};
+assert.equal(ctx.pcpErrors(p).length,0);assert.equal(ctx.pcpMetrics({pcp:p}).final,200);assert(Math.abs(ctx.pcpMetrics({pcp:p}).advance-100/3)<1e-10);
+p.tarefas[0].predecessora='b';assert(ctx.pcpErrors(p).some(x=>x.includes('ciclo')));delete p.tarefas[0].predecessora;
+p.tarefas[1].inicio='2026-10-02';assert(ctx.pcpErrors(p).some(x=>x.includes('posterior')));
+new vm.Script(fs.readFileSync('apps-script/Code.gs','utf8'));
+const html=fs.readFileSync('index.html','utf8'); const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];scripts.forEach(s=>new vm.Script(s[1]));
+assert(!html.includes(".filter(r=>r[2]==='TOTAL').slice(1)"));assert(html.includes('if (obras[id]) continue'));
+console.log('OK: sintaxe, custo, avanço ponderado, ciclo e datas.');
