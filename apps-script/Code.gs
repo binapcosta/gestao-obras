@@ -1,3 +1,35 @@
+function requireUser_(){
+  var email=String(Session.getActiveUser().getEmail()||'').trim().toLowerCase();
+  var configured=PropertiesService.getScriptProperties().getProperty('ALLOWED_EMAILS');
+  if(!configured)throw new Error('Configure ALLOWED_EMAILS no servidor.');
+  var allowed=configured.split(',').map(function(v){return v.trim().toLowerCase();}).filter(Boolean);
+  if(!email||allowed.indexOf(email)<0)throw new Error('Acesso não autorizado. Entre com uma conta liberada.');
+  return email;
+}
+function requireAdmin_(){
+  var email=requireUser_();
+  var admin=String(PropertiesService.getScriptProperties().getProperty('ADMIN_EMAIL')||'').trim().toLowerCase();
+  if(!admin||email!==admin)throw new Error('Operação exclusiva da administração.');
+}
+function doGet(){
+  try{
+    requireUser_();
+    return HtmlService.createHtmlOutputFromFile('Painel').setTitle('CompaSSS — Gestão de Obras');
+  }catch(err){
+    return HtmlService.createHtmlOutput('<h2>Acesso indisponível</h2><p>Entre com uma conta autorizada. A administração deve conferir a configuração de acesso.</p>');
+  }
+}
+function doPost(){return json_({ok:false,erro:'Use o painel autenticado.'});}
+function pcpApi(action,payload){
+  requireUser_();
+  var response;
+  if(action==='obras'||action==='historico')response=readData_({parameter:{action:action}});
+  else if(action==='salvarObra'){
+    if(!payload||payload.action!=='salvarObra')throw new Error('Solicitação inválida.');
+    response=writeData_({parameter:{payload:JSON.stringify(payload)}});
+  }else throw new Error('Operação inválida.');
+  return JSON.parse(response.getContent());
+}
 function database_() {
   var id=PropertiesService.getScriptProperties().getProperty('SHEET_ID');
   if(!id)throw new Error('Configure SHEET_ID nas Propriedades do script.');
@@ -10,7 +42,7 @@ function tab_(ss){
   return sh;
 }
 function json_(data){return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);}
-function doGet(e){
+function readData_(e){
   try{
     var ss=database_();
     if(e&&e.parameter&&e.parameter.action==='obras'){
@@ -42,7 +74,7 @@ function validate_(o){
   }
   if(JSON.stringify(o).length>45000)throw new Error('Obra excede o limite desta versão (45.000 caracteres).');
 }
-function doPost(e){
+function writeData_(e){
   var lock=LockService.getScriptLock();
   try{
     var raw=e&&e.parameter&&e.parameter.payload?e.parameter.payload:e&&e.postData?e.postData.contents:null;
@@ -82,6 +114,7 @@ function changedFields_(before,after){
 }
 // Executar no editor para ativar. Não é chamada pela API pública.
 function instalarBackupDiario(){
+  requireAdmin_();
   var props=PropertiesService.getScriptProperties();
   if(!props.getProperty('BACKUP_FOLDER_ID')){
     var folder=DriveApp.createFolder('CompaSSS — Backups PCP');
@@ -92,6 +125,7 @@ function instalarBackupDiario(){
   return backupDiarioPCP();
 }
 function backupDiarioPCP(){
+  requireAdmin_();
   var lock=LockService.getScriptLock();
   try{
     lock.waitLock(30000);
