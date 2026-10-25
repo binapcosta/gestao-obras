@@ -82,12 +82,13 @@ function renderPCP(){
   pcpInput(contacts,'E-mail do gestor',p.passagem.emailGestor,'email',v=>p.passagem.emailGestor=v);
   pcpInput(contacts,'E-mails para resumo do PCP (separados por vírgula)',p.passagem.emailsPCP,'emails',v=>p.passagem.emailsPCP=v);
   pcpElement('p','Cadastre o responsável e o e-mail em cada atividade. Os contatos são salvos com a obra; o envio automático ainda não está ativado.',panel);
+  pcpImportUI(panel,o);
   pcpElement('h3','Cronograma — dias corridos',panel);
-  pcpElement('p','Dependências geram alertas; as datas não são deslocadas automaticamente. A linha de base preserva o primeiro planejamento.',panel);
+  pcpElement('p','Dependências geram alertas; as datas não são deslocadas automaticamente. A linha de base preserva o primeiro planejamento; o cronograma atual continua editável.',panel);
   const actions=pcpElement('div',undefined,panel);actions.className='actions-row';
   const print=pcpElement('button','Imprimir cronograma para cliente',actions);print.className='btn';
   print.onclick=printClientSchedule;
-  const add=pcpElement('button','Adicionar atividade',actions);add.className='btn';add.disabled=!!p.baseline;
+  const add=pcpElement('button','Adicionar atividade',actions);add.className='btn';add.disabled=false;
   add.onclick=()=>{p.tarefas.push({id:crypto.randomUUID(),nome:'Nova atividade',responsavel:'',qtd:1,qtdReal:0,horas:0,horasReal:0});saveAll();renderPCP();};
   const base=pcpElement('button',p.baseline?'Linha de base registrada':'Registrar linha de base',actions);base.className='btn';base.disabled=!!p.baseline;
   base.onclick=()=>{
@@ -112,7 +113,7 @@ function renderPCP(){
       ['impedimento','Impedimento / ação / responsável','textarea']].forEach(([key,label,type])=>{
       pcpInput(fields,label,t[key],type,v=>{
         t[key]=v;
-      },!!p.baseline&&['inicio','fim','horas','qtd'].includes(key));
+      },false);
     });
     const label=pcpElement('label','Predecessora (término → início)',fields);
     const select=pcpElement('select',undefined,label);select.className='form-input';
@@ -121,7 +122,7 @@ function renderPCP(){
     });
     select.onchange=()=>{t.predecessora=select.value;saveAll();renderPCP();};
     const del=pcpElement('button','Remover atividade',card);del.className='btn btn-danger';
-    del.disabled=!!p.baseline;
+    del.disabled=false;
     del.onclick=()=>{
       if(p.tarefas.some(x=>x.predecessora===t.id)){alert('Remova primeiro as dependências desta atividade.');return;}
       p.tarefas=p.tarefas.filter(x=>x.id!==t.id);saveAll();renderPCP();
@@ -225,4 +226,118 @@ function printClientSchedule(){
   renderGantt(gantt,p);
   pcpElement('footer','CompaSSS Tecnologia · '+o.nome+' · '+date,root);
   win.focus();
+}
+
+/* Importação local: custos orçados; nunca altera valores realizados. */
+function budgetNorm(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+function budgetNumber(v){
+  if(typeof v==='number')return Number.isFinite(v)&&v>=0?v:NaN;
+  let s=String(v??'').trim().replace(/^R\$\s*/,'').replace(/\s/g,'');
+  if(!s)return NaN;
+  if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');
+  if(!/^\d+(\.\d+)?$/.test(s))return NaN;
+  return Number(s);
+}
+function budgetRows(rows){
+  const aliases={name:['descricao','item','material servico'],total:['custo r compra total','custo total','orcado r','orcado','valor total'],qty:['qtd','quantidade'],unit:['custo r compra unitario','custo unitario','valor unitario'],cat:['categoria'],type:['tipo']};
+  let header=-1,cols;
+  for(let i=0;i<Math.min(rows.length,60);i++){
+    const h=rows[i].map(budgetNorm),m={};
+    Object.keys(aliases).forEach(k=>m[k]=h.findIndex(v=>aliases[k].includes(v)));
+    if(m.name>=0&&(m.total>=0||(m.qty>=0&&m.unit>=0))){header=i;cols=m;break;}
+  }
+  if(header<0)throw new Error('Cabeçalhos não reconhecidos. Use Descrição e Custo total, ou Quantidade e Custo unitário.');
+  const result=[];
+  const categories={equipamentos:'eq',materiais:'eq',terceiros:'ter',infraestrutura:'inf',cabeamento:'cab','m o compass':'cmp','mao de obra compasss':'cmp',eq:'eq',ter:'ter',inf:'inf',cab:'cab',cmp:'cmp'};
+  rows.slice(header+1).forEach((r,i)=>{
+    const name=String(r[cols.name]??'').trim();if(!name)return;
+    if(/^(sub ?total|total)(\s|$)/.test(budgetNorm(name)))return;
+    let cost=budgetNumber(r[cols.total]);
+    // Fórmulas sem resultado salvo exigem revisão: não utilizar preço de venda.
+    if(cols.total<0)cost=budgetNumber(r[cols.qty])*budgetNumber(r[cols.unit]);
+    const desc=budgetNorm(name),type=budgetNorm(r[cols.type]);
+    const suggested=/\b(cabo|cabeamento|cordao optico|patch cord)\b/.test(desc)?'cab':/\b(eletroduto|eletrocalha|condulete|infraestrutura|canaleta)\b/.test(desc)?'inf':/\b(terceiro|terceirizada|terceirizado)\b/.test(desc)?'ter':type==='servico'?'cmp':type==='produto'?'eq':'';
+    const category=categories[budgetNorm(r[cols.cat])]||suggested;
+    result.push({name,cost,category,row:header+i+2});
+  });
+  if(!result.length)throw new Error('A aba não contém itens com descrição.');
+  if(result.length>300)throw new Error('Importe no máximo 300 itens por vez.');
+  return result;
+}
+function budgetApply(o,items,source){
+  const next=JSON.parse(JSON.stringify(o));let added=0,skipped=0;
+  const keys=new Set(CATS.flatMap(c=>(next.cats[c]||[]).map(r=>r.importKey).filter(Boolean)));
+  items.forEach(item=>{
+    if(!CATS.includes(item.category)||!Number.isFinite(item.cost)||item.cost<0||!item.name.trim())throw new Error('Confira a categoria e o custo de todos os itens.');
+    const key=JSON.stringify([source,item.row,item.name]);
+    if(keys.has(key)){skipped++;return;}
+    next.idCt=(Number(next.idCt)||0)+1;
+    next.cats[item.category].push({id:'e'+next.idCt,name:item.name,bud:item.cost,val:'',importKey:key});keys.add(key);added++;
+  });
+  if(JSON.stringify(next).length>45000)throw new Error('Os itens excedem o limite da obra (45.000 caracteres). Reduza a importação.');
+  return {obra:next,added,skipped};
+}
+let budgetLoader;
+function budgetLibrary(){
+  if(window.XLSX)return Promise.resolve(window.XLSX);
+  if(!budgetLoader)budgetLoader=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');script.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    script.onload=()=>window.XLSX?resolve(window.XLSX):reject(new Error('Leitor de planilha indisponível.'));
+    script.onerror=()=>{budgetLoader=null;script.remove();reject(new Error('Não foi possível carregar o leitor de planilhas. Verifique a conexão e tente novamente.'));};
+    document.head.appendChild(script);
+  });
+  return budgetLoader;
+}
+function pcpImportUI(panel,o){
+  const box=pcpElement('details',undefined,panel);box.className='card';
+  pcpElement('summary','Importar materiais e serviços orçados',box);
+  pcpElement('p','Selecione Excel (.xlsx/.xlsm) ou CSV. Escolha a aba, confira custos de compra e revise as categorias sugeridas (serviços são sugeridos como M.O. Compass; ajuste os terceirizados). O realizado e a linha de base serão preservados. Depois clique em Salvar no Sheets.',box);
+  const file=pcpElement('input',undefined,box);file.type='file';file.accept='.xlsx,.xlsm,.csv';
+  const preview=pcpElement('div',undefined,box);preview.style.overflowX='auto';
+  file.onchange=async()=>{
+    preview.replaceChildren();const f=file.files[0];if(!f)return;
+    const selected=o.id;
+    try{
+      if(f.size>5*1024*1024)throw new Error('Arquivo maior que 5 MB.');
+      const X=await budgetLibrary();const bytes=await f.arrayBuffer();
+      if(currentObraId!==selected||!box.isConnected)return;
+      const wb=X.read(bytes,{type:'array',cellFormula:false,bookVBA:false});
+      const label=pcpElement('label','Aba da planilha: ',preview),select=pcpElement('select',undefined,label);select.className='form-input';
+      wb.SheetNames.forEach(name=>{const opt=pcpElement('option',name,select);opt.value=name;});
+      const content=pcpElement('div',undefined,preview);
+      function show(){
+        content.replaceChildren();
+        try{
+          const sheet=wb.Sheets[select.value],range=X.utils.decode_range(sheet['!ref']||'A1');
+          if(range.e.r>10000||range.e.c>200)throw new Error('Aba muito extensa; exporte apenas a tabela de itens.');
+          const items=budgetRows(X.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true}));
+          pcpElement('p',items.length+' itens encontrados. Se houver fórmulas sem valores, abra e salve o arquivo no Excel antes de importar, ou informe o custo na prévia.',content);
+          const table=pcpElement('table',undefined,content);table.style.width='100%';
+          const tr=pcpElement('tr',undefined,pcpElement('thead',undefined,table));
+          ['Linha','Descrição','Categoria','Custo orçado (R$)'].forEach(t=>pcpElement('th',t,tr));
+          const body=pcpElement('tbody',undefined,table);
+          items.forEach(item=>{
+            const row=pcpElement('tr',undefined,body);pcpElement('td',String(item.row),row);pcpElement('td',item.name,row);
+            const cat=pcpElement('select',undefined,pcpElement('td',undefined,row));cat.className='form-input';
+            [{id:'',label:'Selecione…'},...CATS.map(id=>({id,label:LABELS[id]}))].forEach(c=>{const opt=pcpElement('option',c.label,cat);opt.value=c.id;opt.selected=c.id===item.category;});
+            cat.onchange=()=>item.category=cat.value;
+            const cost=pcpElement('input',undefined,pcpElement('td',undefined,row));cost.type='number';cost.min='0';cost.step='0.01';cost.className='form-input';cost.value=Number.isFinite(item.cost)?item.cost:'';
+            cost.oninput=()=>item.cost=budgetNumber(cost.value);
+          });
+          const status=pcpElement('p','',content);
+          const apply=pcpElement('button','Adicionar itens à obra',content);apply.type='button';apply.className='btn';
+          apply.onclick=()=>{
+            try{
+              if(currentObraId!==selected)throw new Error('Reabra a importação na obra desejada.');
+              saveCurrent();const result=budgetApply(obras[selected],items,f.name+' / '+select.value);
+              obras[selected]=result.obra;saveAll();renderAllLists();recalc();
+              apply.disabled=true;alert(result.added+' itens adicionados; '+result.skipped+' já importados. Clique em Salvar no Sheets para compartilhar.');renderPCP();
+              setSyncStatus('load','Orçamento importado localmente; salve no Sheets.');
+            }catch(e){status.textContent=e.message;}
+          };
+        }catch(e){pcpElement('p',e.message,content);}
+      }
+      select.onchange=show;show();
+    }catch(e){pcpElement('p',e.message,preview);}
+  };
 }
