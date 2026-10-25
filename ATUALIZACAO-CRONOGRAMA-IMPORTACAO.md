@@ -7,7 +7,7 @@ No mesmo projeto Apps Script da Gestão de Obras, substitua o conteúdo de `Pain
 Datas, horas e quantidades planejadas continuam editáveis após registrar a linha de base. É possível adicionar e remover atividades, respeitando dependências. A primeira linha de base permanece guardada em `pcp.baseline`; a tela e a impressão usam o cronograma atual. Abra a atividade para editar e clique em Salvar no Sheets para compartilhar.
 
 ## Importar custos
-Dentro da obra, abra “Importar materiais e serviços orçados”. Escolha `.xlsx`, `.xlsm` ou `.csv` (até 5 MB), selecione a aba correta e confira a prévia. A aba DETALHES não é somada automaticamente. São aceitos até 300 itens por importação, respeitando o limite de 45.000 caracteres da obra no servidor.
+Dentro da obra, abra “Importar materiais e serviços orçados”. Selecione um ou vários arquivos `.xlsx`, `.xlsm` ou `.csv` (até 10 arquivos, 5 MB por arquivo e 20 MB no conjunto). Escolha uma aba por arquivo e confira as prévias. Adicionar itens de todos os arquivos reúne os itens em uma única operação. Um arquivo ou item inválido impede a inclusão do conjunto, sem gravação parcial. A aba DETALHES não é somada automaticamente. São aceitos até 300 itens no conjunto por importação, respeitando o limite de 45.000 caracteres da obra no servidor.
 
 O modelo CompaSSS é reconhecido por DESCRIÇÃO e CUSTO (R$) COMPRA TOTAL. Também são aceitas as colunas Descrição e Custo total, ou Descrição, Quantidade e Custo unitário. Preços de venda não são utilizados. Quando existe coluna de custo total, resultado vazio ou inválido exige correção na prévia, sem substituição automática por outro preço. Fórmulas não são recalculadas pelo importador: abra, recalcule e salve no Excel antes de enviar se necessário.
 

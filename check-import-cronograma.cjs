@@ -40,3 +40,12 @@ const classified=ctx.budgetRows([['Descrição','Custo total','Tipo'],['Serviço
 assert.deepEqual(Array.from(classified,x=>x.category),['ter','inf','inf','inf','ter']);
 assert.equal(ctx.budgetRows([['Descrição','Custo total','Categoria'],['Instalação',10,'Serviço terceiros']])[0].category,'ter');
 console.log('OK: terceiros prioritários sobre cabo; seal tube e ferro galvanizado em infraestrutura.');
+const groups=[{source:'A.xlsx / Planilha1',items:[{name:'Cabo',category:'cab',cost:10,row:12}]},{source:'B.xlsm / Planilha1',items:[{name:'Cabo',category:'cab',cost:20,row:12}]}];
+const beforeBatch=JSON.stringify(obra),batch=ctx.budgetBatch(obra,groups);
+assert.equal(batch.added,2);assert.equal(batch.obra.cats.cab.reduce((n,r)=>n+r.bud,0),30);assert.equal(JSON.stringify(obra),beforeBatch);
+assert.equal(ctx.budgetBatch(batch.obra,groups).skipped,2);
+assert.throws(()=>ctx.budgetBatch(obra,[groups[0],{source:'invalido',error:true}]));assert.equal(JSON.stringify(obra),beforeBatch);
+assert.throws(()=>ctx.budgetBatch(obra,[groups[0],{source:'bad',items:[{name:'A',category:'',cost:2,row:1}]}]));assert.equal(JSON.stringify(obra),beforeBatch);
+assert.throws(()=>ctx.budgetBatch(obra,[{source:'large',items:Array(301).fill(groups[0].items[0])}]));
+assert.equal(all(panel).find(e=>e.type==='file').multiple,true);
+console.log('OK: múltiplos arquivos, origem individual, soma dos orçados, reimportação e lote inválido sem gravação parcial.');

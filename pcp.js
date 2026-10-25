@@ -290,30 +290,49 @@ function budgetLibrary(){
   });
   return budgetLoader;
 }
+function budgetBatch(o,groups){
+  if(!groups.length||groups.some(g=>g.error||!g.items))throw new Error('Confira as abas de todos os arquivos antes de importar.');
+  if(groups.reduce((n,g)=>n+g.items.length,0)>300)throw new Error('Selecione no máximo 300 itens no conjunto de arquivos.');
+  let result={obra:o,added:0,skipped:0};
+  groups.forEach(g=>{const next=budgetApply(result.obra,g.items,g.source);result={obra:next.obra,added:result.added+next.added,skipped:result.skipped+next.skipped};});
+  return result;
+}
 function pcpImportUI(panel,o){
   const box=pcpElement('details',undefined,panel);box.className='card';
   pcpElement('summary','Importar materiais e serviços orçados',box);
-  pcpElement('p','Selecione Excel (.xlsx/.xlsm) ou CSV. Escolha a aba, confira custos de compra e revise as categorias sugeridas (serviços são sugeridos como M.O. Compass; ajuste os terceirizados). O realizado e a linha de base serão preservados. Depois clique em Salvar no Sheets.',box);
-  const file=pcpElement('input',undefined,box);file.type='file';file.accept='.xlsx,.xlsm,.csv';
+  pcpElement('p','Selecione um ou vários arquivos Excel (.xlsx/.xlsm) ou CSV. Escolha uma aba por arquivo e revise custos e categorias. Serviços sem identificação de terceiros são sugeridos como M.O. Compass. Os itens serão adicionados juntos; realizado e linha de base são preservados. Depois clique em Salvar no Sheets.',box);
+  const file=pcpElement('input',undefined,box);file.type='file';file.accept='.xlsx,.xlsm,.csv';file.multiple=true;
   const preview=pcpElement('div',undefined,box);preview.style.overflowX='auto';
+  let generation=0;
   file.onchange=async()=>{
-    preview.replaceChildren();const f=file.files[0];if(!f)return;
+    const token=++generation;preview.replaceChildren();const files=Array.from(file.files||[]);if(!files.length)return;
     const selected=o.id;
+    const active=()=>token===generation&&currentObraId===selected&&box.isConnected;
     try{
-      if(f.size>5*1024*1024)throw new Error('Arquivo maior que 5 MB.');
-      const X=await budgetLibrary();const bytes=await f.arrayBuffer();
-      if(currentObraId!==selected||!box.isConnected)return;
-      const wb=X.read(bytes,{type:'array',cellFormula:false,bookVBA:false});
-      const label=pcpElement('label','Aba da planilha: ',preview),select=pcpElement('select',undefined,label);select.className='form-input';
-      wb.SheetNames.forEach(name=>{const opt=pcpElement('option',name,select);opt.value=name;});
-      const content=pcpElement('div',undefined,preview);
-      function show(){
-        content.replaceChildren();
+      if(files.length>10)throw new Error('Selecione até 10 arquivos por vez.');
+      if(files.some(f=>f.size>5*1024*1024))throw new Error('Cada arquivo deve ter até 5 MB.');
+      if(files.reduce((n,f)=>n+f.size,0)>20*1024*1024)throw new Error('O conjunto deve ter até 20 MB.');
+      const X=await budgetLibrary();if(!active())return;
+      const groups=[];
+      for(const f of files){
+        const group={items:null,error:true,source:''};groups.push(group);
+        const section=pcpElement('section',undefined,preview);pcpElement('h4',f.name,section);
         try{
-          const sheet=wb.Sheets[select.value],range=X.utils.decode_range(sheet['!ref']||'A1');
-          if(range.e.r>10000||range.e.c>200)throw new Error('Aba muito extensa; exporte apenas a tabela de itens.');
-          const items=budgetRows(X.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true}));
-          pcpElement('p',items.length+' itens encontrados. Se houver fórmulas sem valores, abra e salve o arquivo no Excel antes de importar, ou informe o custo na prévia.',content);
+          const bytes=await f.arrayBuffer();if(!active())return;
+          const wb=X.read(bytes,{type:'array',cellFormula:false,bookVBA:false});
+          const label=pcpElement('label','Aba da planilha: ',section),select=pcpElement('select',undefined,label);select.className='form-input';
+          wb.SheetNames.forEach(name=>{const opt=pcpElement('option',name,select);opt.value=name;});
+          select.value=wb.SheetNames[0]||'';
+          const content=pcpElement('div',undefined,section);
+          function show(){
+            content.replaceChildren();group.items=null;group.error=true;group.source=f.name+' / '+select.value;
+            try{
+              const sheet=wb.Sheets[select.value];if(!sheet)throw new Error('Selecione uma aba válida.');
+              const range=X.utils.decode_range(sheet['!ref']||'A1');
+              if(range.e.r>10000||range.e.c>200)throw new Error('Aba muito extensa; exporte apenas a tabela de itens.');
+              const items=budgetRows(X.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true}));
+              group.items=items;group.error=false;
+              pcpElement('p',items.length+' itens. Confira a categoria e o custo de compra antes de adicionar.',content);
           const table=pcpElement('table',undefined,content);table.style.width='100%';
           const tr=pcpElement('tr',undefined,pcpElement('thead',undefined,table));
           ['Linha','Descrição','Categoria','Custo orçado (R$)'].forEach(t=>pcpElement('th',t,tr));
@@ -326,20 +345,24 @@ function pcpImportUI(panel,o){
             const cost=pcpElement('input',undefined,pcpElement('td',undefined,row));cost.type='number';cost.min='0';cost.step='0.01';cost.className='form-input';cost.value=Number.isFinite(item.cost)?item.cost:'';
             cost.oninput=()=>item.cost=budgetNumber(cost.value);
           });
-          const status=pcpElement('p','',content);
-          const apply=pcpElement('button','Adicionar itens à obra',content);apply.type='button';apply.className='btn';
-          apply.onclick=()=>{
-            try{
-              if(currentObraId!==selected)throw new Error('Reabra a importação na obra desejada.');
-              saveCurrent();const result=budgetApply(obras[selected],items,f.name+' / '+select.value);
-              obras[selected]=result.obra;saveAll();renderAllLists();recalc();
-              apply.disabled=true;alert(result.added+' itens adicionados; '+result.skipped+' já importados. Clique em Salvar no Sheets para compartilhar.');renderPCP();
-              setSyncStatus('load','Orçamento importado localmente; salve no Sheets.');
-            }catch(e){status.textContent=e.message;}
-          };
-        }catch(e){pcpElement('p',e.message,content);}
+
+            }catch(e){pcpElement('p',e.message,content);}
+          }
+          select.onchange=show;show();
+        }catch(e){pcpElement('p',f.name+': '+e.message,section);}
       }
-      select.onchange=show;show();
-    }catch(e){pcpElement('p',e.message,preview);}
+      if(!active())return;
+      const status=pcpElement('p',files.length+' arquivos selecionados. Nenhum item foi adicionado ainda.',preview);
+      const apply=pcpElement('button','Adicionar itens de todos os arquivos',preview);apply.type='button';apply.className='btn';
+      apply.onclick=()=>{
+        try{
+          if(!active())throw new Error('Reabra a importação na obra desejada.');
+          saveCurrent();const result=budgetBatch(obras[selected],groups);
+          obras[selected]=result.obra;saveAll();renderAllLists();recalc();
+          apply.disabled=true;alert(result.added+' itens adicionados; '+result.skipped+' já importados. Clique em Salvar no Sheets para compartilhar.');renderPCP();
+          setSyncStatus('load','Orçamentos importados localmente; salve no Sheets.');
+        }catch(e){status.textContent=e.message;}
+      };
+    }catch(e){if(active())pcpElement('p',e.message,preview);}
   };
 }
