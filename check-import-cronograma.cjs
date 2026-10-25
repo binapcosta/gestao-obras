@@ -35,3 +35,8 @@ const html=fs.readFileSync(__dirname+'/apps-script/Painel.html','utf8');
 const scripts=[...html.matchAll(/atob\("([A-Za-z0-9+/=]+)"\)/g)].map(m=>Buffer.from(m[1],'base64').toString());
 scripts.forEach(s=>new vm.Script(s));assert.equal(scripts[2],source);
 console.log('OK: edição após linha de base, inclusão de atividade, preservação original, importação de custos, categorias, duplicidade, valores inválidos, limite e sintaxe do Painel.');
+
+const classified=ctx.budgetRows([['Descrição','Custo total','Tipo'],['Serviço terceiros - passagem de cabo',100,'SERVIÇO'],['Seal tube 3/4',50,'PRODUTO'],['Infraestrutura de ferro galvanizado',80,'PRODUTO'],['Eletroduto com cabo',60,'PRODUTO'],['Suporte',20,'SERVIÇO TERCEIROS']]);
+assert.deepEqual(Array.from(classified,x=>x.category),['ter','inf','inf','inf','ter']);
+assert.equal(ctx.budgetRows([['Descrição','Custo total','Categoria'],['Instalação',10,'Serviço terceiros']])[0].category,'ter');
+console.log('OK: terceiros prioritários sobre cabo; seal tube e ferro galvanizado em infraestrutura.');

@@ -248,7 +248,7 @@ function budgetRows(rows){
   }
   if(header<0)throw new Error('Cabeçalhos não reconhecidos. Use Descrição e Custo total, ou Quantidade e Custo unitário.');
   const result=[];
-  const categories={equipamentos:'eq',materiais:'eq',terceiros:'ter',infraestrutura:'inf',cabeamento:'cab','m o compass':'cmp','mao de obra compasss':'cmp',eq:'eq',ter:'ter',inf:'inf',cab:'cab',cmp:'cmp'};
+  const categories={equipamentos:'eq',materiais:'eq',terceiros:'ter','servico terceiros':'ter','servicos terceiros':'ter','servico de terceiros':'ter','servicos de terceiros':'ter',infraestrutura:'inf',cabeamento:'cab','m o compass':'cmp','mao de obra compasss':'cmp',eq:'eq',ter:'ter',inf:'inf',cab:'cab',cmp:'cmp'};
   rows.slice(header+1).forEach((r,i)=>{
     const name=String(r[cols.name]??'').trim();if(!name)return;
     if(/^(sub ?total|total)(\s|$)/.test(budgetNorm(name)))return;
@@ -256,7 +256,9 @@ function budgetRows(rows){
     // Fórmulas sem resultado salvo exigem revisão: não utilizar preço de venda.
     if(cols.total<0)cost=budgetNumber(r[cols.qty])*budgetNumber(r[cols.unit]);
     const desc=budgetNorm(name),type=budgetNorm(r[cols.type]);
-    const suggested=/\b(cabo|cabeamento|cordao optico|patch cord)\b/.test(desc)?'cab':/\b(eletroduto|eletrocalha|condulete|infraestrutura|canaleta)\b/.test(desc)?'inf':/\b(terceiro|terceirizada|terceirizado)\b/.test(desc)?'ter':type==='servico'?'cmp':type==='produto'?'eq':'';
+    const thirdParty=/\b(terceiros?|terceirizadas?|terceirizados?)\b/.test(desc+' '+type);
+    const infrastructure=/\b(eletroduto|eletrocalha|condulete|infraestrutura|canaleta|seal\s*tub(?:e|o)|sealtub(?:e|o)|ferro galvanizado)\b/.test(desc);
+    const suggested=thirdParty?'ter':infrastructure?'inf':/\b(cabo|cabeamento|cordao optico|patch cord)\b/.test(desc)?'cab':type==='servico'?'cmp':type==='produto'?'eq':'';
     const category=categories[budgetNorm(r[cols.cat])]||suggested;
     result.push({name,cost,category,row:header+i+2});
   });
