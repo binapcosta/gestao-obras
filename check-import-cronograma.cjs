@@ -49,3 +49,18 @@ assert.throws(()=>ctx.budgetBatch(obra,[groups[0],{source:'bad',items:[{name:'A'
 assert.throws(()=>ctx.budgetBatch(obra,[{source:'large',items:Array(301).fill(groups[0].items[0])}]));
 assert.equal(all(panel).find(e=>e.type==='file').multiple,true);
 console.log('OK: múltiplos arquivos, origem individual, soma dos orçados, reimportação e lote inválido sem gravação parcial.');
+let scheduleId=0;ctx.crypto.randomUUID=()=> 'schedule-'+(++scheduleId);
+const task={id:'original',nome:'Instalar',responsavel:'Leo',emailResponsavel:'leo@example.com',inicio:'2026-10-01',fim:'2026-10-02',qtd:5,horas:8,qtdReal:4,horasReal:7,inicioReal:'2026-10-01',fimReal:'2026-10-02',previsao:'2026-10-02',impedimento:'Antigo',scheduleImportKey:'old'};
+const copy=ctx.scheduleCopy(task);assert.notEqual(copy.id,task.id);assert.equal(copy.qtd,5);assert.equal(copy.horas,8);assert.equal(copy.qtdReal,0);assert.equal(copy.horasReal,0);assert.equal(copy.fimReal,undefined);assert.equal(copy.scheduleImportKey,undefined);
+const inputRows=[['ID','Atividade','Responsável','Início planejado','Fim planejado','Quantidade prevista','Horas previstas','Predecessora'],[1,'Infraestrutura','Leo','01/11/2026','03/11/2026',10,16,''],[2,'Cabeamento','Alan','04/11/2026','05/11/2026',20,8,1]];
+const tasks=ctx.scheduleRows(inputRows);assert.equal(tasks[0].inicio,'2026-11-01');assert.equal(tasks[1].pred,'1');
+const scheduleBefore=JSON.stringify(obra),addedSchedule=ctx.scheduleApply(obra,tasks,'Cronograma.xlsx / Obra');assert.equal(addedSchedule.added,2);
+const imported=addedSchedule.obra.pcp.tarefas.slice(-2);assert.notEqual(imported[0].id,imported[1].id);assert.equal(imported[1].predecessora,imported[0].id);assert.equal(imported[0].qtdReal,0);assert.equal(JSON.stringify(obra),scheduleBefore);assert.equal(JSON.stringify(addedSchedule.obra.pcp.baseline),original);
+assert.equal(ctx.scheduleApply(addedSchedule.obra,tasks,'Cronograma.xlsx / Obra').skipped,2);
+assert.equal(ctx.scheduleDate(1),'1900-01-01');assert.equal(ctx.scheduleDate(61),'1900-03-01');assert.equal(ctx.scheduleDate(0,true),'1904-01-01');assert.equal(ctx.scheduleDate(1,true),'1904-01-02');assert.throws(()=>ctx.scheduleDate(60));assert.throws(()=>ctx.scheduleDate('31/02/2026'));
+const invalid=inputRows.map(r=>r.slice());invalid[2][7]=99;assert.throws(()=>ctx.scheduleRows(invalid));invalid[2][7]=2;assert.throws(()=>ctx.scheduleRows(invalid));
+assert.throws(()=>ctx.scheduleRows([['Atividade','Início','Fim'],['Sem datas','','']]));
+assert.throws(()=>ctx.scheduleRows([['Atividade','Início','Fim'],['Invertido','10/11/2026','09/11/2026']]));
+assert.equal(ctx.scheduleRows([['Atividade','Início','Fim'],['Padrão','01/11/2026','02/11/2026']])[0].qtd,1);
+const tooBig=tasks.map(t=>({...t,nome:t.nome+'x'.repeat(46000)}));assert.throws(()=>ctx.scheduleApply(obra,tooBig,'G'));assert.equal(JSON.stringify(obra),scheduleBefore);
+console.log('OK: cópia sem apontamentos, importação de atividades, dependências, datas Excel 1900/1904, duplicidade, linha de base e rejeição sem alteração parcial.');

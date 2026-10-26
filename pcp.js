@@ -84,6 +84,7 @@ function renderPCP(){
   pcpElement('p','Cadastre o responsável e o e-mail em cada atividade. Os contatos são salvos com a obra; o envio automático ainda não está ativado.',panel);
   pcpImportUI(panel,o);
   pcpElement('h3','Cronograma — dias corridos',panel);
+  scheduleImportUI(panel,o);
   pcpElement('p','Dependências geram alertas; as datas não são deslocadas automaticamente. A linha de base preserva o primeiro planejamento; o cronograma atual continua editável.',panel);
   const actions=pcpElement('div',undefined,panel);actions.className='actions-row';
   const print=pcpElement('button','Imprimir cronograma para cliente',actions);print.className='btn';
@@ -121,6 +122,8 @@ function renderPCP(){
       const opt=pcpElement('option',x.nome,select);opt.value=x.id;opt.selected=t.predecessora===x.id;
     });
     select.onchange=()=>{t.predecessora=select.value;saveAll();renderPCP();};
+    const copy=pcpElement('button','Duplicar atividade',card);copy.className='btn';
+    copy.onclick=()=>{const next=scheduleCopy(t);p.tarefas.splice(p.tarefas.indexOf(t)+1,0,next);saveAll();renderPCP();const el=Array.from(panel.querySelectorAll('details')).find(el=>el.dataset.taskId===next.id);if(el)el.open=true;};
     const del=pcpElement('button','Remover atividade',card);del.className='btn btn-danger';
     del.disabled=false;
     del.onclick=()=>{
@@ -363,6 +366,117 @@ function pcpImportUI(panel,o){
           setSyncStatus('load','Orçamentos importados localmente; salve no Sheets.');
         }catch(e){status.textContent=e.message;}
       };
+    }catch(e){if(active())pcpElement('p',e.message,preview);}
+  };
+}
+function scheduleCopy(t){
+  const copy={id:crypto.randomUUID(),nome:t.nome+' (cópia)',qtdReal:0,horasReal:0};
+  ['responsavel','emailResponsavel','inicio','fim','qtd','horas','predecessora'].forEach(k=>{if(t[k]!==undefined)copy[k]=t[k];});
+  return copy;
+}
+function scheduleDate(v,date1904=false){
+  if(v===''||v==null)return '';
+  let iso;
+  if(typeof v==='number'){
+    if(!Number.isFinite(v)||(date1904?v<0:v<1)||(!date1904&&Math.floor(v)===60))throw new Error('Data Excel inválida.');
+    const base=date1904?Date.UTC(1904,0,1):Date.UTC(1899,11,31);
+    const days=Math.floor(v)-(date1904||v<60?0:1);
+    iso=new Date(base+days*86400000).toISOString().slice(0,10);
+  }else{
+    const s=String(v).trim(),br=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    iso=br?br[3]+'-'+br[2].padStart(2,'0')+'-'+br[1].padStart(2,'0'):s;
+  }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)||!Number.isFinite(Date.parse(iso+'T12:00:00Z'))||new Date(iso+'T12:00:00Z').toISOString().slice(0,10)!==iso)throw new Error('Use uma data válida: dd/mm/aaaa ou aaaa-mm-dd.');
+  return iso;
+}
+function scheduleRows(rows,date1904=false){
+  const aliases={nome:['atividade','descricao','tarefa','nome da atividade'],inicio:['inicio','inicio planejado','data inicio','data de inicio'],fim:['fim','termino','fim planejado','data fim','data de termino','termino planejado'],responsavel:['responsavel'],emailResponsavel:['email','e mail','email do responsavel','e mail do responsavel'],qtd:['quantidade','quantidade prevista','qtd'],horas:['horas','horas previstas'],key:['id','codigo','ordem'],pred:['predecessora','id predecessora']};
+  let header=-1,cols;
+  for(let i=0;i<Math.min(60,rows.length);i++){
+    const normalized=rows[i].map(budgetNorm),m={};
+    Object.keys(aliases).forEach(k=>m[k]=normalized.findIndex(v=>aliases[k].includes(v)));
+    if(m.nome>=0&&m.inicio>=0&&m.fim>=0){header=i;cols=m;break;}
+  }
+  if(header<0)throw new Error('Cabeçalhos necessários: Atividade, Início planejado e Fim planejado. Datas não são calculadas a partir de duração.');
+  const tasks=[];
+  rows.slice(header+1).forEach((r,index)=>{
+    const nome=String(r[cols.nome]??'').trim();if(!nome)return;
+    if(/^(sub ?total|total)(\s|$)/.test(budgetNorm(nome)))return;
+    const line=header+index+2;
+    try{
+      const inicio=scheduleDate(r[cols.inicio],date1904),fim=scheduleDate(r[cols.fim],date1904);
+      if(!inicio||!fim)throw new Error('Preencha início e fim.');
+      if(fim<inicio)throw new Error('Fim anterior ao início.');
+      const number=(k,fallback)=>cols[k]<0||r[cols[k]]===''||r[cols[k]]==null?fallback:budgetNumber(r[cols[k]]);
+      const qtd=number('qtd',1),horas=number('horas',0);
+      if(!Number.isFinite(qtd)||!Number.isFinite(horas))throw new Error('Quantidade ou horas inválidas.');
+      tasks.push({nome,inicio,fim,responsavel:String(r[cols.responsavel]??'').trim(),emailResponsavel:String(r[cols.emailResponsavel]??'').trim(),qtd,horas,row:line,key:String(cols.key<0?tasks.length+1:r[cols.key]??'').trim(),pred:String(r[cols.pred]??'').trim()});
+    }catch(e){throw new Error('Linha '+line+': '+e.message);}
+  });
+  if(!tasks.length)throw new Error('Nenhuma atividade encontrada.');
+  if(tasks.length>200)throw new Error('Importe até 200 atividades por vez.');
+  const map=new Map();
+  tasks.forEach(t=>{if(!t.key||map.has(t.key))throw new Error('IDs/ordens vazios ou repetidos.');map.set(t.key,t);});
+  tasks.forEach(t=>{
+    const seen=new Set([t.key]);let p=t.pred;
+    while(p){if(!map.has(p))throw new Error('Linha '+t.row+': predecessora inexistente no arquivo ('+p+'). Use apenas um ID por atividade.');if(seen.has(p))throw new Error('Dependências em ciclo no arquivo.');seen.add(p);p=map.get(p).pred;}
+    const pred=map.get(t.pred);if(pred&&t.inicio<=pred.fim)throw new Error('Linha '+t.row+': início deve ser posterior ao fim da predecessora.');
+  });
+  return tasks;
+}
+function scheduleApply(o,items,source){
+  const next=JSON.parse(JSON.stringify(o)),p=pcpState(next),ids=new Map();let added=0,skipped=0;
+  items.forEach(t=>{
+    const key=JSON.stringify([source,t.key,t.nome]);
+    const existing=p.tarefas.find(x=>x.scheduleImportKey===key);
+    ids.set(t.key,existing?existing.id:crypto.randomUUID());
+  });
+  items.forEach(t=>{
+    const key=JSON.stringify([source,t.key,t.nome]);
+    if(p.tarefas.some(x=>x.scheduleImportKey===key)){skipped++;return;}
+    p.tarefas.push({id:ids.get(t.key),nome:t.nome,responsavel:t.responsavel,emailResponsavel:t.emailResponsavel,inicio:t.inicio,fim:t.fim,qtd:t.qtd,horas:t.horas,qtdReal:0,horasReal:0,predecessora:t.pred?ids.get(t.pred):'',scheduleImportKey:key});added++;
+  });
+  const errors=pcpErrors(p);if(errors.length)throw new Error(errors.join(' '));
+  if(JSON.stringify(next).length>45000)throw new Error('O cronograma excede o limite de 45.000 caracteres da obra.');
+  return {obra:next,added,skipped};
+}
+function scheduleImportUI(panel,o){
+  const box=pcpElement('details',undefined,panel);box.className='card';
+  pcpElement('summary','Importar cronograma do Excel',box);
+  pcpElement('p','Colunas obrigatórias: Atividade, Início planejado, Fim planejado. Opcionais: Responsável, E-mail, Quantidade prevista, Horas previstas, ID e Predecessora. Sem ID, a ordem das atividades é 1, 2, 3… A importação acrescenta atividades; preserva as existentes e a linha de base.',box);
+  const file=pcpElement('input',undefined,box);file.type='file';file.accept='.xlsx,.xlsm,.csv';
+  const preview=pcpElement('div',undefined,box);preview.style.overflowX='auto';let generation=0;
+  file.onchange=async()=>{
+    const token=++generation;preview.replaceChildren();const f=file.files[0];if(!f)return;
+    const active=()=>token===generation&&currentObraId===o.id&&box.isConnected;
+    try{
+      if(f.size>5*1024*1024)throw new Error('Selecione arquivo de até 5 MB.');
+      const X=await budgetLibrary(),bytes=await f.arrayBuffer();if(!active())return;
+      const wb=X.read(bytes,{type:'array',cellFormula:false,bookVBA:false});
+      const label=pcpElement('label','Aba: ',preview),select=pcpElement('select',undefined,label);select.className='form-input';
+      wb.SheetNames.forEach(name=>{const opt=pcpElement('option',name,select);opt.value=name;});select.value=wb.SheetNames[0]||'';
+      const content=pcpElement('div',undefined,preview);
+      function show(){
+        content.replaceChildren();
+        try{
+          const sheet=wb.Sheets[select.value];if(!sheet)throw new Error('Selecione uma aba.');
+          const range=X.utils.decode_range(sheet['!ref']||'A1');if(range.e.r>10000||range.e.c>200)throw new Error('Aba muito extensa.');
+          const items=scheduleRows(X.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true}),!!(wb.Workbook&&wb.Workbook.WBProps&&wb.Workbook.WBProps.date1904));
+          pcpElement('p',items.length+' atividades encontradas. Revise antes de adicionar. Avanço, horas realizadas e datas reais começam em branco/zero.',content);
+          const table=pcpElement('table',undefined,content);table.style.width='100%';const head=pcpElement('tr',undefined,pcpElement('thead',undefined,table));
+          ['ID','Atividade','Responsável','Início','Fim','Quantidade','Horas','Predecessora'].forEach(t=>pcpElement('th',t,head));const body=pcpElement('tbody',undefined,table);
+          items.forEach(t=>{const tr=pcpElement('tr',undefined,body);[t.key,t.nome,t.responsavel,t.inicio,t.fim,t.qtd,t.horas,t.pred||'—'].forEach(v=>pcpElement('td',String(v),tr));});
+          const status=pcpElement('p','',content),apply=pcpElement('button','Adicionar atividades à obra',content);apply.type='button';apply.className='btn';
+          apply.onclick=()=>{
+            try{
+              if(!active())throw new Error('Reabra a importação na obra desejada.');saveCurrent();
+              const result=scheduleApply(obras[o.id],items,f.name+' / '+select.value);obras[o.id]=result.obra;saveAll();renderPCP();
+              alert(result.added+' atividades adicionadas; '+result.skipped+' já importadas. Clique em Salvar no Sheets.');setSyncStatus('load','Cronograma importado localmente; salve no Sheets.');
+            }catch(e){status.textContent=e.message;}
+          };
+        }catch(e){pcpElement('p',e.message,content);}
+      }
+      select.onchange=show;show();
     }catch(e){if(active())pcpElement('p',e.message,preview);}
   };
 }
