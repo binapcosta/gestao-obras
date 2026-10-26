@@ -13,13 +13,20 @@ function pcpInput(parent,label,value,type,change,disabled=false) {
   const wrap=pcpElement('label',undefined,parent); wrap.className='form-field';
   pcpElement('span',label,wrap).className='form-label';
   const input=pcpElement(type==='textarea'?'textarea':'input',undefined,wrap);
-  if(type!=='textarea') input.type=type==='emails'?'email':type;
+  if(type!=='textarea') input.type=type==='date'||type==='number'?'text':type==='emails'?'email':type;
+  if(type==='date'){input.placeholder='dd/mm/aaaa';input.maxLength=10;input.inputMode='numeric';}
+  if(type==='number')input.inputMode='decimal';
   if(type==='emails') input.multiple=true;
-  input.className='form-input'; input.value=value??''; input.disabled=disabled;
-  if(type==='number'){input.min='0';input.step='0.01';}
+  input.className='form-input'; input.value=type==='date'?brDate(value):type==='number'?brEdit(value):value??''; input.disabled=disabled;
+  input.lang='pt-BR';
   input.addEventListener('change',()=>{
+    let parsed=input.value;input.setCustomValidity('');
+    try{
+      if(type==='date'&&parsed){if(!/^\d{2}\/\d{2}\/\d{4}$/.test(parsed))throw new Error('Use dd/mm/aaaa.');parsed=scheduleDate(parsed);}
+      if(type==='number'){if(!brCheck(input))throw new Error('Use o padrão brasileiro: 1.234,56.');parsed=input.value.trim()===''?0:brParse(input.value);}
+    }catch(e){input.setCustomValidity(e.message);input.reportValidity();return;}
     if(!input.checkValidity()){input.reportValidity();return;}
-    change(type==='number'?Number(input.value):input.value);
+    change(parsed);
     saveAll(); renderPCP();
   });
 }
@@ -65,8 +72,8 @@ function renderPCP(){
   const p=pcpState(o), m=pcpMetrics(o);
   pcpElement('h2','PCP — prazo e custo para concluir',panel);
   const summary=pcpElement('p',undefined,panel);
-  summary.textContent='Atividades atrasadas: '+m.late+' | Avanço físico: '+(m.advance===null?'não definido':m.advance.toFixed(1)+'%')+
-    ' | Horas: '+m.realHours+' / '+m.hours+' | Custo final estimado: '+fmtP(m.final);
+  summary.textContent='Atividades atrasadas: '+m.late+' | Avanço físico: '+(m.advance===null?'não definido':brNumber(m.advance,1)+'%')+
+    ' | Horas: '+brNumber(m.realHours)+' / '+brNumber(m.hours)+' | Custo final estimado: '+fmtP(m.final);
   pcpElement('p','Avanço ponderado pelas horas previstas. Preencha horas e quantidades de todas as atividades. Horas realizadas são informativas; os custos continuam no financeiro.',panel);
   const grid=pcpElement('div',undefined,panel);grid.className='fin-grid';
   pcpInput(grid,'Comprometido ainda não realizado (R$)',p.comprometido,'number',v=>p.comprometido=v);
@@ -141,7 +148,7 @@ function renderGantt(panel,p){
   pcpElement('h3','Visão do cronograma',panel);
   pcpElement('p',new Date(min).toLocaleDateString('pt-BR',{timeZone:'UTC'})+' a '+new Date(max).toLocaleDateString('pt-BR',{timeZone:'UTC'}),panel);
   tasks.forEach(t=>{
-    pcpElement('p',t.nome+' | '+t.inicio+' → '+(t.previsao||t.fim),panel);
+    pcpElement('p',t.nome+' | '+brDate(t.inicio)+' → '+brDate(t.previsao||t.fim),panel);
     const track=pcpElement('div',undefined,panel);track.style.cssText='height:12px;background:var(--bg);margin-bottom:12px';
     const bar=pcpElement('div',undefined,track);
     bar.style.cssText='height:12px;background:var(--text-accent);margin-left:'+((pcpDate(t.inicio)-min)/span*100)+'%;width:'+Math.max(0,(pcpDate(t.previsao||t.fim)-pcpDate(t.inicio)+86400000)/span*100)+'%';
@@ -165,6 +172,7 @@ async function pcpLoad(){
 }
 async function pcpSave(){
   if(!scriptUrl){alert('Configure a URL do Apps Script.');return;}
+  const invalid=Array.from(document.getElementById('dashScreen').querySelectorAll('input')).find(el=>!el.checkValidity());if(invalid){invalid.reportValidity();return;}
   saveCurrent();const o=obras[currentObraId];if(!o)return;
   const errors=pcpErrors(pcpState(o));if(errors.length){alert(errors.join('\n'));return;}
   if(window.pcpSaving)return;
@@ -345,8 +353,8 @@ function pcpImportUI(panel,o){
             const cat=pcpElement('select',undefined,pcpElement('td',undefined,row));cat.className='form-input';
             [{id:'',label:'Selecione…'},...CATS.map(id=>({id,label:LABELS[id]}))].forEach(c=>{const opt=pcpElement('option',c.label,cat);opt.value=c.id;opt.selected=c.id===item.category;});
             cat.onchange=()=>item.category=cat.value;
-            const cost=pcpElement('input',undefined,pcpElement('td',undefined,row));cost.type='number';cost.min='0';cost.step='0.01';cost.className='form-input';cost.value=Number.isFinite(item.cost)?item.cost:'';
-            cost.oninput=()=>item.cost=budgetNumber(cost.value);
+            const cost=pcpElement('input',undefined,pcpElement('td',undefined,row));cost.type='text';cost.inputMode='decimal';cost.lang='pt-BR';cost.className='form-input';cost.value=Number.isFinite(item.cost)?brEdit(item.cost):'';
+            cost.oninput=()=>{brCheck(cost);item.cost=brParse(cost.value);};cost.onblur=()=>brBlur(cost);
           });
 
             }catch(e){pcpElement('p',e.message,content);}
@@ -465,7 +473,7 @@ function scheduleImportUI(panel,o){
           pcpElement('p',items.length+' atividades encontradas. Revise antes de adicionar. Avanço, horas realizadas e datas reais começam em branco/zero.',content);
           const table=pcpElement('table',undefined,content);table.style.width='100%';const head=pcpElement('tr',undefined,pcpElement('thead',undefined,table));
           ['ID','Atividade','Responsável','Início','Fim','Quantidade','Horas','Predecessora'].forEach(t=>pcpElement('th',t,head));const body=pcpElement('tbody',undefined,table);
-          items.forEach(t=>{const tr=pcpElement('tr',undefined,body);[t.key,t.nome,t.responsavel,t.inicio,t.fim,t.qtd,t.horas,t.pred||'—'].forEach(v=>pcpElement('td',String(v),tr));});
+          items.forEach(t=>{const tr=pcpElement('tr',undefined,body);[t.key,t.nome,t.responsavel,brDate(t.inicio),brDate(t.fim),brNumber(t.qtd),brNumber(t.horas),t.pred||'—'].forEach(v=>pcpElement('td',String(v),tr));});
           const status=pcpElement('p','',content),apply=pcpElement('button','Adicionar atividades à obra',content);apply.type='button';apply.className='btn';
           apply.onclick=()=>{
             try{

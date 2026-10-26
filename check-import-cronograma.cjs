@@ -5,19 +5,20 @@ class El{
  constructor(tag){this.tag=tag;this.children=[];this.dataset={};this.events={};this.style={};}
  appendChild(el){this.children.push(el);return el;} replaceChildren(){this.children=[];}
  addEventListener(event,fn){this.events[event]=fn;} querySelectorAll(){return [];}
- checkValidity(){return true;}
+ checkValidity(){return !this.validationMessage;} setCustomValidity(v){this.validationMessage=v;} reportValidity(){return this.checkValidity();}
 }
 const panel=new El('section');
 const obra={id:'obra1',nome:'Obra',cats:Object.fromEntries(categories.map(c=>[c,[]])),idCt:0,pcp:{passagem:{},comprometido:0,restante:0,tarefas:[{id:'t1',nome:'Instalar',inicio:'2026-10-01',fim:'2026-10-05',horas:8,qtd:2}]}};
 obra.pcp.baseline={tarefas:JSON.parse(JSON.stringify(obra.pcp.tarefas))};
 const original=JSON.stringify(obra.pcp.baseline);
 const ctx=vm.createContext({console,Intl,Date,Map,Set,Number,JSON,crypto:{randomUUID:()=> 'new-task'},CATS:categories,LABELS:{eq:'Equipamentos',cmp:'M.O. Compass'},obras:{obra1:obra},currentObraId:'obra1',obraTotal:()=>0,fmtP:String,saveAll:()=>{},printClientSchedule:()=>{},alert:()=>{},document:{getElementById:()=>panel,createElement:t=>new El(t)}});
+vm.runInContext(fs.readFileSync(__dirname+'/locale-br.js','utf8'),ctx);
 vm.runInContext(source.slice(0,source.indexOf('const originalOpenDash='))+source.slice(source.indexOf('/* Importação local:')),ctx);
 vm.runInContext('renderPCP()',ctx);
 function all(e){return [e,...e.children.flatMap(all)];}
 let nodes=all(panel);
-const input=nodes.find(e=>e.tag==='input'&&e.value==='2026-10-05');assert.equal(input.disabled,false);
-input.value='2026-10-10';input.events.change();assert.equal(obra.pcp.tarefas[0].fim,'2026-10-10');assert.equal(JSON.stringify(obra.pcp.baseline),original);
+const input=nodes.find(e=>e.tag==='input'&&e.value==='05/10/2026');assert.equal(input.disabled,false);
+input.value='10/10/2026';input.events.change();assert.equal(obra.pcp.tarefas[0].fim,'2026-10-10');assert.equal(JSON.stringify(obra.pcp.baseline),original);
 const add=all(panel).find(e=>e.textContent==='Adicionar atividade');assert.equal(add.disabled,false);add.onclick();assert.equal(obra.pcp.tarefas.length,2);
 const del=all(panel).find(e=>e.textContent==='Remover atividade');assert.equal(del.disabled,false);
 let items=ctx.budgetRows([['DESCRIÇÃO','QTD','CUSTO (R$) COMPRA TOTAL','PREÇO (R$) VENDA TOTAL','CATEGORIA'],['Cabo',10,250,500,'Cabeamento'],['Serviço',1,0,200,'cmp'],['TOTAL',null,250]]);
@@ -64,3 +65,13 @@ assert.throws(()=>ctx.scheduleRows([['Atividade','Início','Fim'],['Invertido','
 assert.equal(ctx.scheduleRows([['Atividade','Início','Fim'],['Padrão','01/11/2026','02/11/2026']])[0].qtd,1);
 const tooBig=tasks.map(t=>({...t,nome:t.nome+'x'.repeat(46000)}));assert.throws(()=>ctx.scheduleApply(obra,tooBig,'G'));assert.equal(JSON.stringify(obra),scheduleBefore);
 console.log('OK: cópia sem apontamentos, importação de atividades, dependências, datas Excel 1900/1904, duplicidade, linha de base e rejeição sem alteração parcial.');
+assert.equal(ctx.brMoney(1234.56),'R$ 1.234,56');assert.equal(ctx.brEdit(0),'0,00');assert.equal(ctx.brNumber(12.5,1),'12,5');assert.equal(ctx.brParse('1.234,56'),1234.56);assert.equal(ctx.brParse('0,05'),0.05);assert.equal(ctx.brParse('1.234'),1234);assert.ok(Number.isNaN(ctx.brParse('1,234.56')));assert.equal(ctx.brDate('2026-11-04'),'04/11/2026');
+vm.runInContext('renderPCP()',ctx);
+const planned=all(panel).find(e=>e.tag==='input'&&e.value==='10/10/2026');planned.value='31/02/2026';planned.events.change();assert.equal(obra.pcp.tarefas[0].fim,'2026-10-10');assert.equal(planned.checkValidity(),false);planned.value='11/10/2026';planned.events.change();assert.equal(obra.pcp.tarefas[0].fim,'2026-10-11');
+const money=all(panel).find(e=>e.tag==='input'&&e.inputMode==='decimal');money.value='1.234,56';money.events.change();assert.equal(obra.pcp.comprometido,1234.56);
+const mainScript=scripts[1];assert.ok(mainScript.includes('brMoney(v)'));assert.ok(!mainScript.includes("Math.round(v).toLocaleString"));assert.ok(!mainScript.includes("'name',this.value);brCheck"));
+ctx.recalc=()=>{};ctx.scheduleAutoSave=()=>{};
+vm.runInContext(mainScript.slice(mainScript.indexOf('function updateEntry('),mainScript.indexOf('function renderList(')),ctx);
+ctx.updateEntry('eq','e99','val','2.345,67');assert.equal(obra.cats.eq[0].val,2345.67);ctx.updateEntry('eq','e99','val','invalid');assert.equal(obra.cats.eq[0].val,2345.67);
+const index=fs.readFileSync(__dirname+'/index.html','utf8');assert.ok(index.includes("function brNumber"));
+console.log('OK: padrão BR nos campos e datas, centavos preservados, entrada com vírgula, rejeição de data inválida e números persistidos sem formatação.');

@@ -369,15 +369,15 @@ function doGet(e) {
     <div class="fin-grid">
       <div class="fin-field">
         <div class="fin-label">Valor de venda</div>
-        <div class="fin-input-wrap"><span class="fin-prefix">R$</span><input type="number" id="finVenda" placeholder="0,00" min="0" step="0.01" oninput="recalcFin()"></div>
+        <div class="fin-input-wrap"><span class="fin-prefix">R$</span><input type="text" inputmode="decimal" lang="pt-BR" onblur="brBlur(this)" id="finVenda" placeholder="0,00" min="0" step="0.01" oninput="recalcFin()"></div>
       </div>
       <div class="fin-field">
         <div class="fin-label">Impostos sobre venda</div>
-        <div class="fin-input-wrap"><input type="number" id="finImpostosPct" placeholder="0,00" min="0" max="100" step="0.01" oninput="recalcFin()" style="text-align:right"><span class="fin-suffix">%</span></div>
+        <div class="fin-input-wrap"><input type="text" inputmode="decimal" lang="pt-BR" onblur="brBlur(this)" id="finImpostosPct" placeholder="0,00" min="0" max="100" step="0.01" oninput="recalcFin()" style="text-align:right"><span class="fin-suffix">%</span></div>
       </div>
       <div class="fin-field">
         <div class="fin-label">Impostos (valor calculado)</div>
-        <div class="fin-input-wrap" style="background:var(--surface-2)"><span class="fin-prefix">R$</span><input type="number" id="finImpostosVal" readonly style="color:var(--text-muted)"></div>
+        <div class="fin-input-wrap" style="background:var(--surface-2)"><span class="fin-prefix">R$</span><input type="text" inputmode="decimal" lang="pt-BR" onblur="brBlur(this)" id="finImpostosVal" readonly style="color:var(--text-muted)"></div>
       </div>
     </div>
     <div class="fin-results">
@@ -490,7 +490,26 @@ function doGet(e) {
 
 </div><!-- /main -->
 
-<script>
+<script>if(typeof Chart!=='undefined')Chart.defaults.locale='pt-BR';
+function brNumber(value,decimals=2){return Number(value||0).toLocaleString('pt-BR',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});}
+function brMoney(value){return 'R$ '+brNumber(value,2);}
+function brEdit(value){return value===''||value==null?'':brNumber(value,2);}
+function brParse(value){
+  if(typeof value==='number')return Number.isFinite(value)&&value>=0?value:NaN;
+  const s=String(value??'').trim().replace(/^R\$\s*/,'');
+  if(!s)return NaN;
+  if(!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d+)?$/.test(s))return NaN;
+  return Number(s.replace(/\./g,'').replace(',','.'));
+}
+function brDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(value||'')?value.split('-').reverse().join('/'):value||'';}
+function brCheck(input){
+  const value=brParse(input.value),valid=input.value.trim()===''||Number.isFinite(value);
+  input.setCustomValidity(valid?'':'Use o padrão brasileiro: 1.234,56.');
+  return valid;
+}
+function brBlur(input){if(brCheck(input)&&input.value.trim()!=='')input.value=brEdit(brParse(input.value));}
+
+
 // ═══════════════════════════════════════════════
 // CONSTANTS & STATE
 // ═══════════════════════════════════════════════
@@ -690,8 +709,8 @@ function openDash(id) {
   document.getElementById('breadcrumbName').textContent = o.nome;
 
   // Preenche campos financeiros
-  document.getElementById('finVenda').value = o.venda || '';
-  document.getElementById('finImpostosPct').value = o.impostoPct || '';
+  document.getElementById('finVenda').value = brEdit(o.venda);
+  document.getElementById('finImpostosPct').value = brEdit(o.impostoPct);
 
   // Destrói gráficos anteriores
   [pieChart, barChart, budChart].forEach(ch => { try { if (ch) ch.destroy(); } catch(e){} });
@@ -720,8 +739,9 @@ function openDash(id) {
 function saveCurrent() {
   if (!currentObraId || !obras[currentObraId]) return;
   const o = obras[currentObraId];
-  o.venda = parseFloat(document.getElementById('finVenda').value)||0;
-  o.impostoPct = parseFloat(document.getElementById('finImpostosPct').value)||0;
+  if(!brCheck(document.getElementById('finVenda'))||!brCheck(document.getElementById('finImpostosPct')))return;
+  o.venda = brParse(document.getElementById('finVenda').value)||0;
+  o.impostoPct = brParse(document.getElementById('finImpostosPct').value)||0;
   saveAll();
 }
 
@@ -736,8 +756,8 @@ function scheduleAutoSave() {
 function currentData() { return currentObraId && obras[currentObraId] ? obras[currentObraId].cats : {eq:[],ter:[],inf:[],cab:[],cmp:[]}; }
 const catSum = (cat,f='val') => (currentData()[cat]||[]).reduce((s,r)=>s+(parseFloat(r[f])||0),0);
 const totalCost = () => CATS.reduce((s,c)=>s+catSum(c,'val'),0);
-const fmt = v => 'R$ '+Math.round(v).toLocaleString('pt-BR');
-const fmtR = v => 'R$ '+Math.round(v).toLocaleString('pt-BR');
+const fmt = v => brMoney(v);
+const fmtR = v => brMoney(v);
 
 function setTab(t) {
   currentTab = t;
@@ -764,6 +784,7 @@ function removeEntry(cat, id) {
 function updateEntry(cat, id, field, val) {
   if (!currentObraId) return;
   const r = obras[currentObraId].cats[cat].find(x=>x.id===id);
+  if(field==='val'||field==='bud'){if(val.trim()!==''&&!Number.isFinite(brParse(val)))return;val=val.trim()===''?'':brParse(val);}
   if (r) r[field]=val;
   recalc(); scheduleAutoSave();
 }
@@ -773,8 +794,8 @@ function renderList(cat) {
   const showBud = currentTab==='orcado';
   (currentData()[cat]||[]).forEach(r=>{
     const d=document.createElement('div'); d.className='entry-row';
-    const budCol=showBud?`<div class="entry-bud"><input type="number" placeholder="Orçado" value="${r.bud}" min="0" step="0.01" oninput="updateEntry('${cat}','${r.id}','bud',this.value)"></div>`:'';
-    d.innerHTML=`<div class="entry-name"><input type="text" placeholder="Descrição" value="${r.name}" oninput="updateEntry('${cat}','${r.id}','name',this.value)"></div>${budCol}<div class="entry-val"><input type="number" placeholder="0,00" value="${r.val}" min="0" step="0.01" oninput="updateEntry('${cat}','${r.id}','val',this.value)"></div><button class="entry-del" onclick="removeEntry('${cat}','${r.id}')" title="Remover"><i class="ti ti-trash"></i></button>`;
+    const budCol=showBud?`<div class="entry-bud"><input type="text" inputmode="decimal" lang="pt-BR" onblur="brBlur(this)" placeholder="Orçado" value="${brEdit(r.bud)}" min="0" step="0.01" oninput="updateEntry('${cat}','${r.id}','bud',this.value);brCheck(this)"></div>`:'';
+    d.innerHTML=`<div class="entry-name"><input type="text" placeholder="Descrição" value="${r.name}" oninput="updateEntry('${cat}','${r.id}','name',this.value)"></div>${budCol}<div class="entry-val"><input type="text" inputmode="decimal" lang="pt-BR" onblur="brBlur(this)" placeholder="0,00" value="${brEdit(r.val)}" min="0" step="0.01" oninput="updateEntry('${cat}','${r.id}','val',this.value);brCheck(this)"></div><button class="entry-del" onclick="removeEntry('${cat}','${r.id}')" title="Remover"><i class="ti ti-trash"></i></button>`;
     el.appendChild(d);
   });
 }
@@ -815,15 +836,16 @@ function recalc() {
 }
 
 function recalcFin() {
-  const venda=parseFloat(document.getElementById('finVenda').value)||0;
-  const impostoPct=parseFloat(document.getElementById('finImpostosPct').value)||0;
+  if(!brCheck(document.getElementById('finVenda'))||!brCheck(document.getElementById('finImpostosPct')))return;
+  const venda=brParse(document.getElementById('finVenda').value)||0;
+  const impostoPct=brParse(document.getElementById('finImpostosPct').value)||0;
   const custo=totalCost(); const impostoVal=venda*impostoPct/100;
   const margem=venda-custo; const lucro=venda-custo-impostoVal;
-  document.getElementById('finImpostosVal').value=impostoVal>0?impostoVal.toFixed(2):'';
+  document.getElementById('finImpostosVal').value=impostoVal>0?brEdit(impostoVal):'';
   document.getElementById('frCusto').textContent=fmt(custo);
   document.getElementById('frCustoPct').textContent=venda>0?Math.round(custo/venda*100)+'% da venda':'—';
   document.getElementById('frImpostos').textContent=fmt(impostoVal);
-  document.getElementById('frImpostosPct').textContent=impostoPct.toFixed(1)+'%';
+  document.getElementById('frImpostosPct').textContent=brNumber(impostoPct,1)+'%';
   document.getElementById('frMargem').textContent=fmt(margem);
   document.getElementById('frMargemPct').textContent=venda>0?Math.round(margem/venda*100)+'%':'—';
   document.getElementById('frLucro').textContent=fmt(lucro);
@@ -869,9 +891,9 @@ function saveToSheets(){
   const tb=CATS.reduce((s,c)=>s+catSum(c,'bud'),0);
   const venda=o.venda||0; const impPct=o.impostoPct||0;
   const impVal=venda*impPct/100; const lucro=venda-tr-impVal;
-  const margem=venda>0?(lucro/venda*100).toFixed(1)+'%':'';
+  const margem=venda>0?brNumber(lucro/venda*100,1)+'%':'';
   const rows=[];
-  rows.push([now,proj,'TOTAL','',tb>0?Math.round(tb):'',Math.round(tr),tb>0?Math.round(tr-tb):'',Math.round(venda),Math.round(impVal),Math.round(lucro),margem,o.status]);
+  rows.push([now,proj,'TOTAL','',tb>0?Math.round(tb):'',brNumber(tr),tb>0?Math.round(tr-tb):'',brNumber(venda),brNumber(impVal),brNumber(lucro),margem,o.status]);
   CATS.forEach(cat=>{
     const rb=catSum(cat,'bud'),rr=catSum(cat,'val');
     (o.cats[cat]||[]).forEach(r=>rows.push([now,proj,LABELS[cat],r.name||'—',parseFloat(r.bud)||'',parseFloat(r.val)||0,r.bud?(parseFloat(r.val)||0)-(parseFloat(r.bud)||0):'','','','','','']));
@@ -915,7 +937,7 @@ async function loadHistory(){
     let html='<table class="hist-table"><thead><tr><th>Data</th><th>Obra</th><th>Status</th><th style="text-align:right">Custo</th><th style="text-align:right">Venda</th><th style="text-align:right">Lucro</th><th style="text-align:right">Margem</th></tr></thead><tbody>';
     rows.slice().reverse().forEach(r=>{
       const lucro=r[9]?Number(r[9]):null;const cor=lucro===null?'':(lucro>=0?'color:var(--green)':'color:var(--red)');
-      html+=`<tr><td>${r[0]||''}</td><td>${r[1]||''}</td><td>${r[11]||''}</td><td style="text-align:right">${r[5]?'R$ '+Number(r[5]).toLocaleString('pt-BR'):'-'}</td><td style="text-align:right">${r[7]?'R$ '+Number(r[7]).toLocaleString('pt-BR'):'-'}</td><td style="text-align:right;${cor}">${lucro!==null?'R$ '+lucro.toLocaleString('pt-BR'):'-'}</td><td style="text-align:right;${cor}">${r[10]||'-'}</td></tr>`;
+      html+=`<tr><td>${r[0]||''}</td><td>${r[1]||''}</td><td>${r[11]||''}</td><td style="text-align:right">${r[5]?brMoney(r[5]):'-'}</td><td style="text-align:right">${r[7]?brMoney(r[7]):'-'}</td><td style="text-align:right;${cor}">${lucro!==null?brMoney(lucro):'-'}</td><td style="text-align:right;${cor}">${r[10]||'-'}</td></tr>`;
     });
     html+='</tbody></table>'; el.innerHTML=html;
   }catch(e){el.innerHTML='<div class="hist-empty">Erro ao carregar histórico.</div>';}
@@ -1128,18 +1150,18 @@ function exportCSV(){
   const rows=[['Obra',o.nome],['Status',STATUS_LABELS[o.status]],[]];
   rows.push(hasBud?['Categoria','Item','Orçado (R$)','Realizado (R$)','Desvio (R$)']:['Categoria','Item','Realizado (R$)']);
   CATS.forEach(c=>{
-    (o.cats[c]||[]).forEach(r=>{const v=parseFloat(r.val)||0,b=parseFloat(r.bud)||0;rows.push(hasBud?[LABELS[c],r.name||'—',Math.round(b),Math.round(v),Math.round(v-b)]:[LABELS[c],r.name||'—',Math.round(v)]);});
+    (o.cats[c]||[]).forEach(r=>{const v=parseFloat(r.val)||0,b=parseFloat(r.bud)||0;rows.push(hasBud?[LABELS[c],r.name||'—',brNumber(b),brNumber(v),brNumber(v-b)]:[LABELS[c],r.name||'—',brNumber(v)]);});
     const rs=catSum(c,'val'),rb=catSum(c,'bud');
     rows.push(hasBud?[LABELS[c]+' SUBTOTAL','',Math.round(rb),Math.round(rs),Math.round(rs-rb)]:[LABELS[c]+' SUBTOTAL','',Math.round(rs)]);
     rows.push([]);
   });
   const tr=totalCost(),tb=CATS.reduce((s,c)=>s+catSum(c,'bud'),0);
   const impVal=venda*impPct/100,lucro=venda-tr-impVal;
-  rows.push(hasBud?['CUSTO TOTAL','',Math.round(tb),Math.round(tr),Math.round(tr-tb)]:['CUSTO TOTAL','',Math.round(tr)]);
+  rows.push(hasBud?['CUSTO TOTAL','',brNumber(tb),brNumber(tr),brNumber(tr-tb)]:['CUSTO TOTAL','',brNumber(tr)]);
   rows.push([]);rows.push(['RESULTADO FINANCEIRO']);
-  rows.push(['Valor de venda','',Math.round(venda)]);
-  rows.push(['Impostos ('+impPct+'%)','',Math.round(impVal)]);
-  rows.push(['Resultado após custos e impostos','',Math.round(lucro)]);
+  rows.push(['Valor de venda','',brNumber(venda)]);
+  rows.push(['Impostos ('+impPct+'%)','',brNumber(impVal)]);
+  rows.push(['Resultado após custos e impostos','',brNumber(lucro)]);
   rows.push(['Margem','',venda>0?Math.round(lucro/venda*100)+'%':'—']);
   const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
@@ -1200,3 +1222,4 @@ renderHome();
 <script src="pcp.js"></script>
 </body>
 </html>
+
