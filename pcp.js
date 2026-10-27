@@ -88,7 +88,8 @@ function renderPCP(){
   const contacts=pcpElement('div',undefined,panel);contacts.className='fin-grid';
   pcpInput(contacts,'E-mail do gestor',p.passagem.emailGestor,'email',v=>p.passagem.emailGestor=v);
   pcpInput(contacts,'E-mails para resumo do PCP (separados por vírgula)',p.passagem.emailsPCP,'emails',v=>p.passagem.emailsPCP=v);
-  pcpElement('p','Cadastre o responsável e o e-mail em cada atividade. Os contatos são salvos com a obra; o envio automático ainda não está ativado.',panel);
+  delayAlertUI(panel,o);
+  purchaseUI(panel,o);
   pcpImportUI(panel,o);
   pcpElement('h3','Cronograma — dias corridos',panel);
   scheduleImportUI(panel,o);
@@ -487,4 +488,70 @@ function scheduleImportUI(panel,o){
       select.onchange=show;show();
     }catch(e){if(active())pcpElement('p',e.message,preview);}
   };
+}
+
+
+function purchaseRead(o,controls){
+  const proposal=String(o.pcp&&o.pcp.passagem&&o.pcp.passagem.proposta||'').trim();
+  if(!proposal)throw new Error('Informe o número da proposta na passagem da proposta.');
+  let date;try{if(!/^\d{2}\/\d{2}\/\d{4}$/.test(controls.date.value))throw 0;date=scheduleDate(controls.date.value);}catch(e){throw new Error('Informe a data necessária no formato dd/mm/aaaa.');}
+  const items=[];controls.rows.forEach(function(entry){
+    if(!entry.checkbox.checked)return;
+    const qty=brParse(entry.qty.value),budget=Number(entry.item.bud);
+    if(!Number.isFinite(qty)||qty<=0)throw new Error('Informe uma quantidade válida para '+entry.item.name+'.');
+    if(entry.item.bud===''||entry.item.bud==null||!Number.isFinite(budget)||budget<0)throw new Error('Informe o valor orçado de '+entry.item.name+'.');
+    items.push({id:entry.item.id,qty:qty,name:String(entry.item.name||''),budget:budget});
+  });
+  if(!items.length)throw new Error('Selecione ao menos um equipamento.');
+  if(items.length>100)throw new Error('Selecione até 100 equipamentos por solicitação.');
+  return {project:o.nome,proposal,date,items,total:items.reduce((a,b)=>a+b.budget,0)};
+}
+function purchasePrint(data){
+  const win=window.open('','_blank');if(!win)throw new Error('Permita a abertura de janelas para gerar o documento.');
+  const d=win.document;d.title='Solicitação de compra';const style=d.createElement('style');
+  style.textContent='body{font:14px Arial;margin:30px;color:#222}h1{color:#406e2a}table{width:100%;border-collapse:collapse}td,th{padding:8px;text-align:left;border-bottom:1px solid #ddd}th{background:#e9f4e6}@media print{button{display:none}}';d.head.appendChild(style);
+  const root=d.body,button=pcpElement('button','Imprimir / Salvar PDF',root);button.onclick=()=>win.print();
+  pcpElement('h1','Solicitação de compra',root);pcpElement('p','Obra: '+data.project,root);pcpElement('p','Proposta: '+data.proposal,root);pcpElement('p','Data necessária: '+brDate(data.date),root);
+  const table=pcpElement('table',undefined,root),head=pcpElement('tr',undefined,table);
+  ['Equipamento','Quantidade solicitada','Valor orçado total do item'].forEach(v=>pcpElement('th',v,head));
+  data.items.forEach(item=>{const tr=pcpElement('tr',undefined,table);[item.name,brNumber(item.qty),brMoney(item.budget)].forEach(v=>pcpElement('td',v,tr));});
+  pcpElement('p','Orçado dos itens selecionados: '+brMoney(data.total),root);
+  pcpElement('p','O valor é o orçamento total registrado para cada item, sem cálculo proporcional por quantidade.',root);win.focus();
+}
+function purchaseUI(panel,o){
+  const box=pcpElement('details',undefined,panel);box.className='card';pcpElement('summary','Selecionar equipamentos e gerar solicitação de compra',box);
+  pcpElement('p','Os valores são os custos orçados totais de cada equipamento selecionado. Confira os dados e salve a obra no Sheets antes de enviar o PDF por e-mail.',box);
+  const controls={rows:[]},label=pcpElement('label','Data necessária (dd/mm/aaaa)',box);
+  controls.date=pcpElement('input',undefined,label);controls.date.type='text';controls.date.placeholder='dd/mm/aaaa';controls.date.className='form-input';
+  const table=pcpElement('table',undefined,box);table.style.width='100%';const h=pcpElement('tr',undefined,table);
+  ['Selecionar','Equipamento','Quantidade solicitada','Orçado total do item'].forEach(t=>pcpElement('th',t,h));
+  (o.cats&&o.cats.eq||[]).forEach(item=>{
+    const row=pcpElement('tr',undefined,table),check=pcpElement('input',undefined,pcpElement('td',undefined,row));check.type='checkbox';
+    pcpElement('td',item.name||'Sem descrição',row);const qty=pcpElement('input',undefined,pcpElement('td',undefined,row));qty.type='text';qty.inputMode='decimal';qty.placeholder='Quantidade';qty.className='form-input';
+    pcpElement('td',item.bud===''||item.bud==null?'Não informado':brMoney(item.bud),row);controls.rows.push({checkbox:check,qty,item});
+  });
+  if(!controls.rows.length)pcpElement('p','Cadastre ou importe equipamentos com valor orçado.',box);
+  const status=pcpElement('p','',box),print=pcpElement('button','Gerar / imprimir solicitação',box);print.type='button';print.className='btn';
+  print.onclick=()=>{try{purchasePrint(purchaseRead(obras[o.id],controls));status.textContent='';}catch(e){status.textContent=e.message;}};
+  const emailLabel=pcpElement('label','E-mail de destino',box),email=pcpElement('input',undefined,emailLabel);email.type='email';email.className='form-input';
+  const send=pcpElement('button','Enviar solicitação em PDF',box);send.className='btn';send.type='button';
+  send.onclick=async()=>{
+    try{
+      const data=purchaseRead(obras[o.id],controls),recipient=email.value.trim();
+      if(!recipient||!email.checkValidity())throw new Error('Informe um e-mail de destino válido.');
+      if(!window.pcpRpc)throw new Error('Abra o painel pela implantação do Apps Script.');
+      if(!confirm('Enviar a solicitação de compra para '+recipient+'? A obra precisa estar salva no Sheets.'))return;
+      send.disabled=true;status.textContent='Enviando…';
+      const result=await window.pcpRpc('enviarCompra',{obraId:o.id,revision:Number(obras[o.id]._revision||0),date:data.date,email:recipient,proposal:data.proposal,requestId:crypto.randomUUID(),items:data.items.map(i=>({id:i.id,qty:i.qty,name:i.name,budget:i.budget}))});
+      if(!result.ok)throw new Error(result.erro||'Não foi possível enviar.');status.textContent='Solicitação enviada em PDF para '+recipient+'.';
+    }catch(e){status.textContent=e.message;}finally{send.disabled=false;}
+  };
+}
+function delayAlertUI(panel,o){
+  const p=pcpState(o),box=pcpElement('div',undefined,panel);box.className='card';
+  const label=pcpElement('label',' Ativar alertas diários de atraso para esta obra',box),check=pcpElement('input',undefined,label);check.type='checkbox';check.checked=!!p.alertasAtivos;
+  check.onchange=()=>{p.alertasAtivos=check.checked;saveAll();};
+  pcpElement('p','Salve a obra no Sheets. O gestor e os destinatários do resumo recebem as atividades atrasadas; cada responsável recebe suas atividades. O acionador é instalado uma vez pela administração.',box);
+  const status=pcpElement('p','',box),install=pcpElement('button','Instalar alertas automáticos (administração)',box);install.className='btn';install.type='button';
+  install.onclick=async()=>{try{if(!window.pcpRpc)throw new Error('Abra o painel pelo Apps Script.');install.disabled=true;const result=await window.pcpRpc('instalarAlertas');status.textContent=result.info;}catch(e){status.textContent=e.message;}finally{install.disabled=false;}};
 }
