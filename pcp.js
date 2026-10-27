@@ -272,24 +272,32 @@ function budgetRows(rows){
     const infrastructure=/\b(eletroduto|eletrocalha|condulete|infraestrutura|canaleta|seal\s*tub(?:e|o)|sealtub(?:e|o)|ferro galvanizado)\b/.test(desc);
     const suggested=thirdParty?'ter':infrastructure?'inf':/\b(cabo|cabeamento|cordao optico|patch cord)\b/.test(desc)?'cab':type==='servico'?'cmp':type==='produto'?'eq':'';
     const category=categories[budgetNorm(r[cols.cat])]||suggested;
-    result.push({name,cost,category,row:header+i+2});
+    const rawQty=cols.qty>=0?r[cols.qty]:'';
+    const quantity=rawQty===''||rawQty==null?null:budgetNumber(rawQty);
+    const rawUnit=cols.unit>=0?r[cols.unit]:'';
+    const unitCost=rawUnit===''||rawUnit==null?null:budgetNumber(rawUnit);
+    result.push({name,cost,category,quantity,unitCost,row:header+i+2});
   });
   if(!result.length)throw new Error('A aba não contém itens com descrição.');
   if(result.length>300)throw new Error('Importe no máximo 300 itens por vez.');
   return result;
 }
 function budgetApply(o,items,source){
-  const next=JSON.parse(JSON.stringify(o));let added=0,skipped=0;
-  const keys=new Set(CATS.flatMap(c=>(next.cats[c]||[]).map(r=>r.importKey).filter(Boolean)));
+  const next=JSON.parse(JSON.stringify(o));let added=0,skipped=0,updated=0;
+  const byKey=new Map(CATS.flatMap(c=>(next.cats[c]||[]).filter(r=>r.importKey).map(r=>[r.importKey,r])));
   items.forEach(item=>{
     if(!CATS.includes(item.category)||!Number.isFinite(item.cost)||item.cost<0||!item.name.trim())throw new Error('Confira a categoria e o custo de todos os itens.');
     const key=JSON.stringify([source,item.row,item.name]);
-    if(keys.has(key)){skipped++;return;}
+    const quantity=item.quantity==null?null:item.quantity;
+    if(quantity!==null&&(!Number.isFinite(quantity)||quantity<0))throw new Error('Confira a quantidade de '+item.name+'.');
+    const unitCost=item.unitCost==null?null:item.unitCost;
+    if(unitCost!==null&&(!Number.isFinite(unitCost)||unitCost<0))throw new Error('Confira o custo unitário de '+item.name+'.');
+    if(byKey.has(key)){const old=byKey.get(key);let changed=false;if((old.qtdOrcada===undefined||old.qtdOrcada===null||old.qtdOrcada==='')&&quantity!==null){old.qtdOrcada=quantity;changed=true;}if((old.unitOrcado===undefined||old.unitOrcado===null||old.unitOrcado==='')&&unitCost!==null){old.unitOrcado=unitCost;changed=true;}if(changed)updated++;else skipped++;return;}
     next.idCt=(Number(next.idCt)||0)+1;
-    next.cats[item.category].push({id:'e'+next.idCt,name:item.name,bud:item.cost,val:'',importKey:key});keys.add(key);added++;
+    const entry={id:'e'+next.idCt,name:item.name,bud:item.cost,val:'',importKey:key};if(quantity!==null)entry.qtdOrcada=quantity;if(unitCost!==null)entry.unitOrcado=unitCost;next.cats[item.category].push(entry);byKey.set(key,entry);added++;
   });
   if(JSON.stringify(next).length>45000)throw new Error('Os itens excedem o limite da obra (45.000 caracteres). Reduza a importação.');
-  return {obra:next,added,skipped};
+  return {obra:next,added,skipped,updated};
 }
 let budgetLoader;
 function budgetLibrary(){
@@ -305,8 +313,8 @@ function budgetLibrary(){
 function budgetBatch(o,groups){
   if(!groups.length||groups.some(g=>g.error||!g.items))throw new Error('Confira as abas de todos os arquivos antes de importar.');
   if(groups.reduce((n,g)=>n+g.items.length,0)>300)throw new Error('Selecione no máximo 300 itens no conjunto de arquivos.');
-  let result={obra:o,added:0,skipped:0};
-  groups.forEach(g=>{const next=budgetApply(result.obra,g.items,g.source);result={obra:next.obra,added:result.added+next.added,skipped:result.skipped+next.skipped};});
+  let result={obra:o,added:0,skipped:0,updated:0};
+  groups.forEach(g=>{const next=budgetApply(result.obra,g.items,g.source);result={obra:next.obra,added:result.added+next.added,skipped:result.skipped+next.skipped,updated:result.updated+next.updated};});
   return result;
 }
 function pcpImportUI(panel,o){
@@ -344,16 +352,20 @@ function pcpImportUI(panel,o){
               if(range.e.r>10000||range.e.c>200)throw new Error('Aba muito extensa; exporte apenas a tabela de itens.');
               const items=budgetRows(X.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true}));
               group.items=items;group.error=false;
-              pcpElement('p',items.length+' itens. Confira a categoria e o custo de compra antes de adicionar.',content);
+              pcpElement('p',items.length+' itens. Confira quantidade, custos unitário e total e categoria. Os valores são independentes; alterar um campo não recalcula os demais.',content);
           const table=pcpElement('table',undefined,content);table.style.width='100%';
           const tr=pcpElement('tr',undefined,pcpElement('thead',undefined,table));
-          ['Linha','Descrição','Categoria','Custo orçado (R$)'].forEach(t=>pcpElement('th',t,tr));
+          ['Linha','Descrição','Quantidade orçada','Categoria','Custo unitário (R$)','Custo total (R$)'].forEach(t=>pcpElement('th',t,tr));
           const body=pcpElement('tbody',undefined,table);
           items.forEach(item=>{
             const row=pcpElement('tr',undefined,body);pcpElement('td',String(item.row),row);pcpElement('td',item.name,row);
+            const quantity=pcpElement('input',undefined,pcpElement('td',undefined,row));quantity.type='text';quantity.inputMode='decimal';quantity.className='form-input';quantity.placeholder='Não informada';quantity.value=Number.isFinite(item.quantity)?brEdit(item.quantity):'';
+            quantity.oninput=()=>{brCheck(quantity);item.quantity=quantity.value.trim()===''?null:brParse(quantity.value);};quantity.onblur=()=>brBlur(quantity);
             const cat=pcpElement('select',undefined,pcpElement('td',undefined,row));cat.className='form-input';
             [{id:'',label:'Selecione…'},...CATS.map(id=>({id,label:LABELS[id]}))].forEach(c=>{const opt=pcpElement('option',c.label,cat);opt.value=c.id;opt.selected=c.id===item.category;});
             cat.onchange=()=>item.category=cat.value;
+            const unitCost=pcpElement('input',undefined,pcpElement('td',undefined,row));unitCost.type='text';unitCost.inputMode='decimal';unitCost.className='form-input';unitCost.placeholder='Não informado';unitCost.value=Number.isFinite(item.unitCost)?brEdit(item.unitCost):'';
+            unitCost.oninput=()=>{brCheck(unitCost);item.unitCost=unitCost.value.trim()===''?null:brParse(unitCost.value);};unitCost.onblur=()=>brBlur(unitCost);
             const cost=pcpElement('input',undefined,pcpElement('td',undefined,row));cost.type='text';cost.inputMode='decimal';cost.lang='pt-BR';cost.className='form-input';cost.value=Number.isFinite(item.cost)?brEdit(item.cost):'';
             cost.oninput=()=>{brCheck(cost);item.cost=brParse(cost.value);};cost.onblur=()=>brBlur(cost);
           });
@@ -371,7 +383,7 @@ function pcpImportUI(panel,o){
           if(!active())throw new Error('Reabra a importação na obra desejada.');
           saveCurrent();const result=budgetBatch(obras[selected],groups);
           obras[selected]=result.obra;saveAll();renderAllLists();recalc();
-          apply.disabled=true;alert(result.added+' itens adicionados; '+result.skipped+' já importados. Clique em Salvar no Sheets para compartilhar.');renderPCP();
+          apply.disabled=true;alert(result.added+' itens adicionados; '+result.updated+' itens existentes complementados; '+result.skipped+' já importados. Clique em Salvar no Sheets para compartilhar.');renderPCP();
           setSyncStatus('load','Orçamentos importados localmente; salve no Sheets.');
         }catch(e){status.textContent=e.message;}
       };
@@ -500,7 +512,9 @@ function purchaseRead(o,controls){
     const qty=brParse(entry.qty.value),budget=Number(entry.item.bud);
     if(!Number.isFinite(qty)||qty<=0)throw new Error('Informe uma quantidade válida para '+entry.item.name+'.');
     if(entry.item.bud===''||entry.item.bud==null||!Number.isFinite(budget)||budget<0)throw new Error('Informe o valor orçado de '+entry.item.name+'.');
-    items.push({id:entry.item.id,qty:qty,name:String(entry.item.name||''),budget:budget});
+    const unitCost=entry.item.unitOrcado===''||entry.item.unitOrcado==null?null:Number(entry.item.unitOrcado);
+    if(unitCost!==null&&(!Number.isFinite(unitCost)||unitCost<0))throw new Error('Custo unitário inválido em '+entry.item.name+'.');
+    items.push({id:entry.item.id,qty:qty,name:String(entry.item.name||''),budget:budget,unitCost:unitCost});
   });
   if(!items.length)throw new Error('Selecione ao menos um equipamento.');
   if(items.length>100)throw new Error('Selecione até 100 equipamentos por solicitação.');
@@ -513,21 +527,22 @@ function purchasePrint(data){
   const root=d.body,button=pcpElement('button','Imprimir / Salvar PDF',root);button.onclick=()=>win.print();
   pcpElement('h1','Solicitação de compra',root);pcpElement('p','Obra: '+data.project,root);pcpElement('p','Proposta: '+data.proposal,root);pcpElement('p','Data necessária: '+brDate(data.date),root);
   const table=pcpElement('table',undefined,root),head=pcpElement('tr',undefined,table);
-  ['Equipamento','Quantidade solicitada','Valor orçado total do item'].forEach(v=>pcpElement('th',v,head));
-  data.items.forEach(item=>{const tr=pcpElement('tr',undefined,table);[item.name,brNumber(item.qty),brMoney(item.budget)].forEach(v=>pcpElement('td',v,tr));});
+  ['Equipamento','Quantidade solicitada','Custo unitário orçado','Valor orçado total do item'].forEach(v=>pcpElement('th',v,head));
+  data.items.forEach(item=>{const tr=pcpElement('tr',undefined,table);[item.name,brNumber(item.qty),item.unitCost==null?'Não informado':brMoney(item.unitCost),brMoney(item.budget)].forEach(v=>pcpElement('td',v,tr));});
   pcpElement('p','Orçado dos itens selecionados: '+brMoney(data.total),root);
   pcpElement('p','O valor é o orçamento total registrado para cada item, sem cálculo proporcional por quantidade.',root);win.focus();
 }
 function purchaseUI(panel,o){
   const box=pcpElement('details',undefined,panel);box.className='card';pcpElement('summary','Selecionar equipamentos e gerar solicitação de compra',box);
-  pcpElement('p','Os valores são os custos orçados totais de cada equipamento selecionado. Confira os dados e salve a obra no Sheets antes de enviar o PDF por e-mail.',box);
+  pcpElement('p','Confira quantidade orçada, custo unitário e custo total. O custo total é o do item inteiro e não é recalculado para uma compra parcial. Salve a obra no Sheets antes de enviar o PDF.',box);
   const controls={rows:[]},label=pcpElement('label','Data necessária (dd/mm/aaaa)',box);
   controls.date=pcpElement('input',undefined,label);controls.date.type='text';controls.date.placeholder='dd/mm/aaaa';controls.date.className='form-input';
   const table=pcpElement('table',undefined,box);table.style.width='100%';const h=pcpElement('tr',undefined,table);
-  ['Selecionar','Equipamento','Quantidade solicitada','Orçado total do item'].forEach(t=>pcpElement('th',t,h));
+  ['Selecionar','Equipamento','Quantidade orçada','Quantidade solicitada','Custo unitário orçado','Orçado total do item'].forEach(t=>pcpElement('th',t,h));
   (o.cats&&o.cats.eq||[]).forEach(item=>{
     const row=pcpElement('tr',undefined,table),check=pcpElement('input',undefined,pcpElement('td',undefined,row));check.type='checkbox';
-    pcpElement('td',item.name||'Sem descrição',row);const qty=pcpElement('input',undefined,pcpElement('td',undefined,row));qty.type='text';qty.inputMode='decimal';qty.placeholder='Quantidade';qty.className='form-input';
+    pcpElement('td',item.name||'Sem descrição',row);pcpElement('td',item.qtdOrcada==null||item.qtdOrcada===''?'Não informada':brNumber(item.qtdOrcada),row);const qty=pcpElement('input',undefined,pcpElement('td',undefined,row));qty.type='text';qty.inputMode='decimal';qty.placeholder='Quantidade';qty.className='form-input';qty.value=item.qtdOrcada==null||item.qtdOrcada===''?'':brEdit(item.qtdOrcada);
+    pcpElement('td',item.unitOrcado===''||item.unitOrcado==null?'Não informado':brMoney(item.unitOrcado),row);
     pcpElement('td',item.bud===''||item.bud==null?'Não informado':brMoney(item.bud),row);controls.rows.push({checkbox:check,qty,item});
   });
   if(!controls.rows.length)pcpElement('p','Cadastre ou importe equipamentos com valor orçado.',box);
@@ -542,7 +557,7 @@ function purchaseUI(panel,o){
       if(!window.pcpRpc)throw new Error('Abra o painel pela implantação do Apps Script.');
       if(!confirm('Enviar a solicitação de compra para '+recipient+'? A obra precisa estar salva no Sheets.'))return;
       send.disabled=true;status.textContent='Enviando…';
-      const result=await window.pcpRpc('enviarCompra',{obraId:o.id,revision:Number(obras[o.id]._revision||0),date:data.date,email:recipient,proposal:data.proposal,requestId:crypto.randomUUID(),items:data.items.map(i=>({id:i.id,qty:i.qty,name:i.name,budget:i.budget}))});
+      const result=await window.pcpRpc('enviarCompra',{obraId:o.id,revision:Number(obras[o.id]._revision||0),date:data.date,email:recipient,proposal:data.proposal,requestId:crypto.randomUUID(),items:data.items.map(i=>({id:i.id,qty:i.qty,name:i.name,budget:i.budget,unitCost:i.unitCost}))});
       if(!result.ok)throw new Error(result.erro||'Não foi possível enviar.');status.textContent='Solicitação enviada em PDF para '+recipient+'.';
     }catch(e){status.textContent=e.message;}finally{send.disabled=false;}
   };

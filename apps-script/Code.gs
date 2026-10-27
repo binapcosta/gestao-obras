@@ -63,7 +63,7 @@ function validate_(o){
   ['eq','ter','inf','cab','cmp'].forEach(function(cat){
     if(!Array.isArray(o.cats[cat]))throw new Error('Categoria inválida: '+cat);
     o.cats[cat].forEach(function(r){
-      ['val','bud'].forEach(function(k){
+      ['val','bud','qtdOrcada','unitOrcado'].forEach(function(k){
         if(r[k]!==''&&r[k]!=null&&(!isFinite(Number(r[k]))||Number(r[k])<0))throw new Error('Custo inválido.');
       });
     });
@@ -174,16 +174,19 @@ function buildOrder_(o,request){
     var budget=Number(item.bud);
     if(String(i.name||'')!==String(item.name||'')||Number(i.budget)!==budget)throw new Error('O item local difere da planilha. Salve a obra antes de enviar.');
     if(item.bud===''||item.bud==null||!Number.isFinite(budget)||budget<0)throw new Error('Informe o valor orçado do equipamento '+String(item.name||'')+' e salve a obra.');
-    seen[i.id]=true;total+=budget;lines.push({name:String(item.name||''),qty:qty,budget:budget});
+    var unitCost=item.unitOrcado==null||item.unitOrcado===''?null:Number(item.unitOrcado);
+    if(unitCost!==null&&(!Number.isFinite(unitCost)||unitCost<0))throw new Error('Custo unitário inválido.');
+    if((i.unitCost==null?null:Number(i.unitCost))!==unitCost)throw new Error('O custo unitário local difere da planilha. Salve a obra antes de enviar.');
+    seen[i.id]=true;total+=budget;lines.push({name:String(item.name||''),qty:qty,budget:budget,unitCost:unitCost});
   });
   return {project:String(o.nome||''),proposal:proposal,date:request.date,lines:lines,total:total};
 }
 function orderHtml_(order){
   var h='<html><head><meta charset="utf-8"><style>body{font:12px Arial;color:#222}h1{color:#406e2a}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#e9f4e6}.num{text-align:right}</style></head><body>';
   h+='<h1>Solicitação de compra</h1><p><b>Obra:</b> '+htmlEscape_(order.project)+'<br><b>Proposta:</b> '+htmlEscape_(order.proposal)+'<br><b>Data necessária:</b> '+htmlEscape_(order.date.split('-').reverse().join('/'))+'</p>';
-  h+='<table><thead><tr><th>Equipamento</th><th>Quantidade solicitada</th><th class="num">Valor orçado total do item</th></tr></thead><tbody>';
-  order.lines.forEach(function(l){h+='<tr><td>'+htmlEscape_(l.name)+'</td><td>'+htmlEscape_(l.qty)+'</td><td class="num">'+brMoneyServer_(l.budget)+'</td></tr>';});
-  return h+'</tbody></table><p><b>Orçado dos itens selecionados: '+brMoneyServer_(order.total)+'</b></p><p>O valor indicado é o orçamento total registrado para cada item; não é um preço unitário nem uma autorização para pagamento.</p></body></html>';
+  h+='<table><thead><tr><th>Equipamento</th><th>Quantidade solicitada</th><th class="num">Custo unitário orçado</th><th class="num">Valor orçado total do item</th></tr></thead><tbody>';
+  order.lines.forEach(function(l){h+='<tr><td>'+htmlEscape_(l.name)+'</td><td>'+htmlEscape_(l.qty)+'</td><td class="num">'+(l.unitCost==null?'Não informado':brMoneyServer_(l.unitCost))+'</td><td class="num">'+brMoneyServer_(l.budget)+'</td></tr>';});
+  return h+'</tbody></table><p><b>Orçado dos itens selecionados: '+brMoneyServer_(order.total)+'</b></p><p>O valor total é o orçamento registrado para o item completo; não é calculado proporcionalmente à quantidade solicitada nem constitui autorização para pagamento.</p></body></html>';
 }
 function sendOrder_(request){
   requireUser_();if(!request||!emailValid_(request.email))throw new Error('Informe um e-mail de destinatário válido.');

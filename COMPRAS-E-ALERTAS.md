@@ -21,3 +21,8 @@ O acionador executa na conta que o instalou e usa sua cota de e-mail. A função
 
 ## Verificação
 Execute `node check-import-cronograma.cjs` e `node check-compras-alertas.cjs`. Os testes simulam Sheets, permissões, disparo e MailApp; nenhuma mensagem real é enviada durante eles. Antes do uso em produção, teste a implantação com duas contas autorizadas, confirme o PDF e confira as abas de histórico e os e-mails recebidos. A conta Google pode pedir novas autorizações de envio e acionadores.
+
+## Quantidades e custos unitários
+A importação lê as colunas QTD, CUSTO (R$) COMPRA UNITÁRIO e CUSTO (R$) COMPRA TOTAL, quando presentes. As quantidades e os valores unitários também podem ser editados diretamente nos itens. A prévia e a solicitação de compra mostram quantidade orçada, quantidade solicitada, custo unitário e valor total orçado. Valores são independentes: alterar um não recalcula os demais. Para uma solicitação parcial, o valor total mostrado permanece o orçamento total do item, e não o custo proporcional da compra parcial.
+
+Para itens previamente importados, reimporte o mesmo arquivo e a mesma aba, com o mesmo nome de arquivo, linha e descrição. Se a quantidade ou o custo unitário ainda não estavam registrados, apenas os campos vazios são preenchidos. Custo total, realizado, quantidades e unitários já registrados são preservados. Itens modificados, movidos ou renomeados podem ser entendidos como novos: faça backup e revise a prévia. Salve a obra no Sheets depois.

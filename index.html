@@ -784,7 +784,7 @@ function removeEntry(cat, id) {
 function updateEntry(cat, id, field, val) {
   if (!currentObraId) return;
   const r = obras[currentObraId].cats[cat].find(x=>x.id===id);
-  if(field==='val'||field==='bud'){if(val.trim()!==''&&!Number.isFinite(brParse(val)))return;val=val.trim()===''?'':brParse(val);}
+  if(field==='val'||field==='bud'||field==='qtdOrcada'||field==='unitOrcado'){if(val.trim()!==''&&!Number.isFinite(brParse(val)))return;val=val.trim()===''?'':brParse(val);}
   if (r) r[field]=val;
   recalc(); scheduleAutoSave();
 }
@@ -795,7 +795,9 @@ function renderList(cat) {
   (currentData()[cat]||[]).forEach(r=>{
     const d=document.createElement('div'); d.className='entry-row';
     const budCol=showBud?`<div class="entry-bud"><input type="text" inputmode="decimal" lang="pt-BR" onblur="brBlur(this)" placeholder="Orçado" value="${brEdit(r.bud)}" min="0" step="0.01" oninput="updateEntry('${cat}','${r.id}','bud',this.value);brCheck(this)"></div>`:'';
-    d.innerHTML=`<div class="entry-name"><input type="text" placeholder="Descrição" value="${r.name}" oninput="updateEntry('${cat}','${r.id}','name',this.value)"></div>${budCol}<div class="entry-val"><input type="text" inputmode="decimal" lang="pt-BR" onblur="brBlur(this)" placeholder="0,00" value="${brEdit(r.val)}" min="0" step="0.01" oninput="updateEntry('${cat}','${r.id}','val',this.value);brCheck(this)"></div><button class="entry-del" onclick="removeEntry('${cat}','${r.id}')" title="Remover"><i class="ti ti-trash"></i></button>`;
+    const qtyCol=`<div class="entry-bud"><input type="text" inputmode="decimal" lang="pt-BR" title="Quantidade orçada" onblur="brBlur(this)" placeholder="Qtd. orçada" value="${brEdit(r.qtdOrcada)}" oninput="updateEntry('${cat}','${r.id}','qtdOrcada',this.value);brCheck(this)"></div>`;
+    const unitCol=`<div class="entry-bud"><input type="text" inputmode="decimal" lang="pt-BR" title="Custo unitário orçado" onblur="brBlur(this)" placeholder="Unitário" value="${brEdit(r.unitOrcado)}" oninput="updateEntry('${cat}','${r.id}','unitOrcado',this.value);brCheck(this)"></div>`;
+    d.innerHTML=`<div class="entry-name"><input type="text" placeholder="Descrição" value="${r.name}" oninput="updateEntry('${cat}','${r.id}','name',this.value)"></div>${qtyCol}${unitCol}${budCol}<div class="entry-val"><input type="text" inputmode="decimal" lang="pt-BR" onblur="brBlur(this)" placeholder="0,00" value="${brEdit(r.val)}" min="0" step="0.01" oninput="updateEntry('${cat}','${r.id}','val',this.value);brCheck(this)"></div><button class="entry-del" onclick="removeEntry('${cat}','${r.id}')" title="Remover"><i class="ti ti-trash"></i></button>`;
     el.appendChild(d);
   });
 }
@@ -1222,4 +1224,5 @@ renderHome();
 <script src="pcp.js"></script>
 </body>
 </html>
+
 
