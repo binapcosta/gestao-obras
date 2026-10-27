@@ -162,9 +162,9 @@ function readSharedWork_(id){
 function buildOrder_(o,request){
   if(Number(request.revision)!==o._revision)throw new Error('A obra compartilhada foi alterada. Carregue a versão atual.');
   if(!isoValid_(request.date))throw new Error('Informe uma data necessária válida.');
-  var proposal=String(o.pcp&&o.pcp.passagem&&o.pcp.passagem.proposta||'').trim();
+  var proposal=String(o.nome||'').trim();
   if(request.proposal!==proposal)throw new Error('A proposta local difere da planilha. Salve a obra antes de enviar.');
-  if(!proposal||proposal.length>300)throw new Error('Cadastre e salve o número da proposta na passagem da proposta.');
+  if(!proposal||proposal.length>300)throw new Error('Cadastre e salve o nome da obra.');
   if(!Array.isArray(request.items)||!request.items.length||request.items.length>100)throw new Error('Selecione de 1 a 100 equipamentos.');
   var byId={},seen={},lines=[],total=0;
   (o.cats&&o.cats.eq||[]).forEach(function(r){byId[r.id]=r;});
@@ -183,7 +183,7 @@ function buildOrder_(o,request){
 }
 function orderHtml_(order){
   var h='<html><head><meta charset="utf-8"><style>body{font:12px Arial;color:#222}h1{color:#406e2a}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#e9f4e6}.num{text-align:right}</style></head><body>';
-  h+='<h1>Solicitação de compra</h1><p><b>Obra:</b> '+htmlEscape_(order.project)+'<br><b>Proposta:</b> '+htmlEscape_(order.proposal)+'<br><b>Data necessária:</b> '+htmlEscape_(order.date.split('-').reverse().join('/'))+'</p>';
+  h+='<h1>Solicitação de compra</h1><p><b>Obra / proposta:</b> '+htmlEscape_(order.proposal)+'<br><b>Data necessária:</b> '+htmlEscape_(order.date.split('-').reverse().join('/'))+'</p>';
   h+='<table><thead><tr><th>Equipamento</th><th>Quantidade solicitada</th><th class="num">Custo unitário orçado</th><th class="num">Valor orçado total do item</th></tr></thead><tbody>';
   order.lines.forEach(function(l){h+='<tr><td>'+htmlEscape_(l.name)+'</td><td>'+htmlEscape_(l.qty)+'</td><td class="num">'+(l.unitCost==null?'Não informado':brMoneyServer_(l.unitCost))+'</td><td class="num">'+brMoneyServer_(l.budget)+'</td></tr>';});
   return h+'</tbody></table><p><b>Orçado dos itens selecionados: '+brMoneyServer_(order.total)+'</b></p><p>O valor total é o orçamento registrado para o item completo; não é calculado proporcionalmente à quantidade solicitada nem constitui autorização para pagamento.</p></body></html>';
@@ -200,7 +200,7 @@ function sendOrder_(request){
     var o=readSharedWork_(request.obraId),order=buildOrder_(o,request),pdf=HtmlService.createHtmlOutput(orderHtml_(order)).getAs(MimeType.PDF).setName('Solicitacao_de_compra.pdf');
     var row=log.getLastRow()+1;log.getRange(row,1,1,6).setValues([[new Date().toISOString(),request.requestId,request.obraId,request.email,Session.getActiveUser().getEmail()||'', 'PREPARADO']]);SpreadsheetApp.flush();
     try{
-      MailApp.sendEmail({to:request.email,subject:'Solicitação de compra — '+order.proposal,body:'Segue em anexo a solicitação de compra da obra '+order.project+'.\nData necessária: '+order.date.split('-').reverse().join('/')+'.',attachments:[pdf]});
+      MailApp.sendEmail({to:request.email,name:'CompaSSS — Gestão de Obras',subject:'Solicitação de compra — '+order.proposal,body:'Segue em anexo a solicitação de compra da obra '+order.project+'.\nData necessária: '+order.date.split('-').reverse().join('/')+'.',attachments:[pdf]});
       log.getRange(row,6).setValue('ENVIADO');SpreadsheetApp.flush();return {ok:true};
     }catch(e){try{log.getRange(row,6).setValue('VERIFICAR');SpreadsheetApp.flush();}catch(ignore){}throw new Error('Envio não confirmado. Consulte Envios_Compra antes de tentar novamente.');}
   }finally{lock.releaseLock();}

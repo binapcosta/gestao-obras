@@ -504,8 +504,8 @@ function scheduleImportUI(panel,o){
 
 
 function purchaseRead(o,controls){
-  const proposal=String(o.pcp&&o.pcp.passagem&&o.pcp.passagem.proposta||'').trim();
-  if(!proposal)throw new Error('Informe o número da proposta na passagem da proposta.');
+  const proposal=String(o.nome||'').trim();
+  if(!proposal)throw new Error('Informe o nome da obra.');
   let date;try{if(!/^\d{2}\/\d{2}\/\d{4}$/.test(controls.date.value))throw 0;date=scheduleDate(controls.date.value);}catch(e){throw new Error('Informe a data necessária no formato dd/mm/aaaa.');}
   const items=[];controls.rows.forEach(function(entry){
     if(!entry.checkbox.checked)return;
@@ -525,7 +525,7 @@ function purchasePrint(data){
   const d=win.document;d.title='Solicitação de compra';const style=d.createElement('style');
   style.textContent='body{font:14px Arial;margin:30px;color:#222}h1{color:#406e2a}table{width:100%;border-collapse:collapse}td,th{padding:8px;text-align:left;border-bottom:1px solid #ddd}th{background:#e9f4e6}@media print{button{display:none}}';d.head.appendChild(style);
   const root=d.body,button=pcpElement('button','Imprimir / Salvar PDF',root);button.onclick=()=>win.print();
-  pcpElement('h1','Solicitação de compra',root);pcpElement('p','Obra: '+data.project,root);pcpElement('p','Proposta: '+data.proposal,root);pcpElement('p','Data necessária: '+brDate(data.date),root);
+  pcpElement('h1','Solicitação de compra',root);pcpElement('p','Obra / proposta: '+data.proposal,root);pcpElement('p','Data necessária: '+brDate(data.date),root);
   const table=pcpElement('table',undefined,root),head=pcpElement('tr',undefined,table);
   ['Equipamento','Quantidade solicitada','Custo unitário orçado','Valor orçado total do item'].forEach(v=>pcpElement('th',v,head));
   data.items.forEach(item=>{const tr=pcpElement('tr',undefined,table);[item.name,brNumber(item.qty),item.unitCost==null?'Não informado':brMoney(item.unitCost),brMoney(item.budget)].forEach(v=>pcpElement('td',v,tr));});

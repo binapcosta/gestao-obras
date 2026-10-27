@@ -77,7 +77,7 @@ const index=fs.readFileSync(__dirname+'/index.html','utf8');assert.ok(index.incl
 console.log('OK: padrão BR nos campos e datas, centavos preservados, entrada com vírgula, rejeição de data inválida e números persistidos sem formatação.');
 
 const buyWork={nome:'Obra A',pcp:{passagem:{proposta:'I123R0'}}};const controls={date:{value:'04/11/2026'},rows:[{checkbox:{checked:true},qty:{value:'2,50'},item:{id:'e1',name:'Câmera',bud:1234.56}},{checkbox:{checked:false},qty:{value:''},item:{id:'e2',name:'Sensor',bud:20}}]};
-const buy=ctx.purchaseRead(buyWork,controls);assert.equal(buy.proposal,'I123R0');assert.equal(buy.date,'2026-11-04');assert.equal(buy.items[0].qty,2.5);assert.equal(buy.total,1234.56);assert.equal(buy.items.length,1);
+const buy=ctx.purchaseRead(buyWork,controls);assert.equal(buy.proposal,'Obra A');assert.equal(buy.date,'2026-11-04');assert.equal(buy.items[0].qty,2.5);assert.equal(buy.total,1234.56);assert.equal(buy.items.length,1);
 controls.date.value='31/02/2026';assert.throws(()=>ctx.purchaseRead(buyWork,controls));controls.date.value='04/11/2026';controls.rows[0].qty.value='0';assert.throws(()=>ctx.purchaseRead(buyWork,controls));controls.rows[0].qty.value='2';controls.rows[0].item.bud='';assert.throws(()=>ctx.purchaseRead(buyWork,controls));
 console.log('OK: seleção de compra, data brasileira, quantidade, valor orçado total e rejeição de dados incompletos.');
 const sourceRows=[['DESCRIÇÃO','QTD','CUSTO (R$) COMPRA UNITÁRIO','CUSTO (R$) COMPRA TOTAL','CATEGORIA'],['Câmera',5,110.5,552.5,'equipamentos'],['Duto','',15.25,100,'infraestrutura']];
