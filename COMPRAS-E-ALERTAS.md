@@ -26,3 +26,16 @@ Execute `node check-import-cronograma.cjs` e `node check-compras-alertas.cjs`. O
 A importação lê as colunas QTD, CUSTO (R$) COMPRA UNITÁRIO e CUSTO (R$) COMPRA TOTAL, quando presentes. As quantidades e os valores unitários também podem ser editados diretamente nos itens. A prévia e a solicitação de compra mostram quantidade orçada, quantidade solicitada, custo unitário e valor total orçado. Valores são independentes: alterar um não recalcula os demais. Para uma solicitação parcial, o valor total mostrado permanece o orçamento total do item, e não o custo proporcional da compra parcial.
 
 Para itens previamente importados, reimporte o mesmo arquivo e a mesma aba, com o mesmo nome de arquivo, linha e descrição. Se a quantidade ou o custo unitário ainda não estavam registrados, apenas os campos vazios são preenchidos. Custo total, realizado, quantidades e unitários já registrados são preservados. Itens modificados, movidos ou renomeados podem ser entendidos como novos: faça backup e revise a prévia. Salve a obra no Sheets depois.
+
+## Cotação de equipamentos com fornecedor
+Abra “Selecionar equipamentos — compra e cotação”, marque os equipamentos, informe as quantidades e a data necessária. Na seção “Cotação junto ao fornecedor”, clique em “Gerar cotação para fornecedor” para imprimir/salvar PDF, ou preencha o e-mail do fornecedor e clique em “Enviar cotação em PDF”. Revise o destinatário antes de confirmar. O documento apresenta equipamentos e quantidades, com campos em branco para o fornecedor informar preços. Os custos internos não são incluídos na cotação. Não é necessário ter um orçamento interno preenchido para cotar.
+
+Sem marcar “Faturamento direto ao cliente”, o documento usa exatamente:
+- Razão social: Compasss Tecnologia
+- CNPJ: 28.781.740/0002-02
+- Inscrição Estadual: 11.356.281
+- Inscrição Municipal: 1.437.030-7
+
+Ao marcar a opção, aparecem os campos de razão social e CNPJ do cliente (obrigatórios), Inscrição Estadual e Inscrição Municipal (opcionais; é possível escrever ISENTO). Os dados permanecem com a obra no navegador e são compartilhados ao salvar a obra no Sheets. Ao desmarcar a opção, o documento retorna aos dados da CompaSSS. O servidor valida os dados do cliente e aplica o padrão corporativo se o faturamento direto estiver desmarcado.
+
+O nome da obra identifica a proposta na cotação. O envio usa descrições dos equipamentos salvos no Sheets e registra tentativas em `Envios_Cotacao`, separadamente de `Envios_Compra`. Não foi realizado envio real durante os testes locais. Para ativar esta melhoria, substitua os conteúdos de Painel.html e Code.gs e atualize a implantação existente, mantendo as propriedades e a mesma planilha.

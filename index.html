@@ -513,7 +513,7 @@ function brBlur(input){if(brCheck(input)&&input.value.trim()!=='')input.value=br
 // ═══════════════════════════════════════════════
 // CONSTANTS & STATE
 // ═══════════════════════════════════════════════
-const SHEET_ID = '11xljqwtwwLTAdUq5rjTyzXsaRdkEtjGiXRDrsr2OxwI';
+const SHEET_ID = '';
 const CATS = ['eq','ter','inf','cab','cmp'];
 const COLORS = {eq:'#406E2A',ter:'#81C361',inf:'#BCE0AB',cab:'#376024',cmp:'#9D9D9D'};
 const LABELS = {eq:'Equipamentos',ter:'Terceiros',inf:'Infraestrutura',cab:'Cabeamento',cmp:'M.O. Compass'};
@@ -876,9 +876,9 @@ function applyScriptUrl(){
 }
 function activateSheets(){
   document.getElementById('setupCard').className='setup-card done';
-  document.getElementById('setupCard').innerHTML=`<div class="setup-title"><i class="ti ti-circle-check" style="color:#16a34a"></i> Google Sheets conectado</div><div class="setup-sub">Dados salvos direto na sua planilha. <a href="https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit" target="_blank" style="color:#406E2A">Abrir planilha →</a><br><small><a href="#" onclick="resetScript()" style="color:#e34948">Redefinir conexão</a></small></div>`;
+  document.getElementById('setupCard').innerHTML=`<div class="setup-title"><i class="ti ti-circle-check" style="color:#16a34a"></i> Google Sheets conectado</div><div class="setup-sub">Dados salvos direto na sua planilha. <a href="${localStorage.getItem('obra_sheet_url')||'#'}" target="_blank" style="color:#406E2A">Abrir planilha →</a><br><small><a href="#" onclick="resetScript()" style="color:#e34948">Redefinir conexão</a></small></div>`;
   document.getElementById('saveBtn').disabled=false;
-  document.getElementById('sheetsLink').href=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit`;
+  document.getElementById('sheetsLink').href=`${localStorage.getItem('obra_sheet_url')||'#'}`;
   document.getElementById('sheetsLink').style.display='flex';
   setSyncStatus('ok','conectado');
 }

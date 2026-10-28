@@ -533,7 +533,7 @@ function purchasePrint(data){
   pcpElement('p','O valor é o orçamento total registrado para cada item, sem cálculo proporcional por quantidade.',root);win.focus();
 }
 function purchaseUI(panel,o){
-  const box=pcpElement('details',undefined,panel);box.className='card';pcpElement('summary','Selecionar equipamentos e gerar solicitação de compra',box);
+  const box=pcpElement('details',undefined,panel);box.className='card';pcpElement('summary','Selecionar equipamentos — compra e cotação',box);
   pcpElement('p','Confira quantidade orçada, custo unitário e custo total. O custo total é o do item inteiro e não é recalculado para uma compra parcial. Salve a obra no Sheets antes de enviar o PDF.',box);
   const controls={rows:[]},label=pcpElement('label','Data necessária (dd/mm/aaaa)',box);
   controls.date=pcpElement('input',undefined,label);controls.date.type='text';controls.date.placeholder='dd/mm/aaaa';controls.date.className='form-input';
@@ -545,7 +545,7 @@ function purchaseUI(panel,o){
     pcpElement('td',item.unitOrcado===''||item.unitOrcado==null?'Não informado':brMoney(item.unitOrcado),row);
     pcpElement('td',item.bud===''||item.bud==null?'Não informado':brMoney(item.bud),row);controls.rows.push({checkbox:check,qty,item});
   });
-  if(!controls.rows.length)pcpElement('p','Cadastre ou importe equipamentos com valor orçado.',box);
+  if(!controls.rows.length)pcpElement('p','Cadastre ou importe os equipamentos. O valor orçado é necessário apenas para a solicitação de compra.',box);
   const status=pcpElement('p','',box),print=pcpElement('button','Gerar / imprimir solicitação',box);print.type='button';print.className='btn';
   print.onclick=()=>{try{purchasePrint(purchaseRead(obras[o.id],controls));status.textContent='';}catch(e){status.textContent=e.message;}};
   const emailLabel=pcpElement('label','E-mail de destino',box),email=pcpElement('input',undefined,emailLabel);email.type='email';email.className='form-input';
@@ -561,6 +561,7 @@ function purchaseUI(panel,o){
       if(!result.ok)throw new Error(result.erro||'Não foi possível enviar.');status.textContent='Solicitação enviada em PDF para '+recipient+'.';
     }catch(e){status.textContent=e.message;}finally{send.disabled=false;}
   };
+  quotationUI(box,o,controls);
 }
 function delayAlertUI(panel,o){
   const p=pcpState(o),box=pcpElement('div',undefined,panel);box.className='card';
@@ -569,4 +570,59 @@ function delayAlertUI(panel,o){
   pcpElement('p','Salve a obra no Sheets. O gestor e os destinatários do resumo recebem as atividades atrasadas; cada responsável recebe suas atividades. O acionador é instalado uma vez pela administração.',box);
   const status=pcpElement('p','',box),install=pcpElement('button','Instalar alertas automáticos (administração)',box);install.className='btn';install.type='button';
   install.onclick=async()=>{try{if(!window.pcpRpc)throw new Error('Abra o painel pelo Apps Script.');install.disabled=true;const result=await window.pcpRpc('instalarAlertas');status.textContent=result.info;}catch(e){status.textContent=e.message;}finally{install.disabled=false;}};
+}
+
+function quoteBilling(direct,fields){
+  if(!direct)return {direct:false,razaoSocial:'Compasss Tecnologia',cnpj:'28.781.740/0002-02',ie:'11.356.281',im:'1.437.030-7'};
+  const b={direct:true};['razaoSocial','cnpj','ie','im'].forEach(k=>b[k]=String(fields[k]||'').trim());
+  if(!b.razaoSocial||b.razaoSocial.length>200)throw new Error('Preencha a razão social para faturamento direto.');
+  if(b.cnpj.replace(/\D/g,'').length!==14)throw new Error('Preencha o CNPJ para faturamento direto com 14 dígitos.');
+  if(b.ie.length>80||b.im.length>80)throw new Error('Inscrição estadual ou municipal muito longa.');
+  return b;
+}
+function quotationRead(o,controls,billing){
+  const proposal=String(o.nome||'').trim();if(!proposal)throw new Error('Informe o nome da obra.');
+  let date;try{if(!/^\d{2}\/\d{2}\/\d{4}$/.test(controls.date.value))throw 0;date=scheduleDate(controls.date.value);}catch(e){throw new Error('Informe a data necessária no formato dd/mm/aaaa.');}
+  const items=[];controls.rows.forEach(e=>{if(e.checkbox.checked){const qty=brParse(e.qty.value);if(!Number.isFinite(qty)||qty<=0||qty>1000000)throw new Error('Informe a quantidade de '+e.item.name+'.');items.push({id:e.item.id,name:String(e.item.name||''),qty});}});
+  if(!items.length||items.length>100)throw new Error('Selecione de 1 a 100 equipamentos.');
+  return {proposal,date,items,billing:quoteBilling(billing.direct,billing)};
+}
+function quotationPrint(data){
+  const win=window.open('','_blank');if(!win)throw new Error('Permita a abertura de janelas para gerar o documento.');
+  const d=win.document;d.title='Solicitação de cotação';const style=d.createElement('style');
+  style.textContent='body{font:14px Arial;color:#222;margin:30px}h1{color:#406e2a}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #ddd}th{background:#e9f4e6}@media print{button{display:none}}';d.head.appendChild(style);
+  const root=d.body,btn=pcpElement('button','Imprimir / Salvar PDF',root);btn.onclick=()=>win.print();
+  pcpElement('h1','Solicitação de cotação',root);pcpElement('p','Obra / proposta: '+data.proposal,root);pcpElement('p','Data necessária: '+brDate(data.date),root);
+  const b=data.billing;pcpElement('h2',b.direct?'Faturamento direto ao cliente':'Faturamento CompaSSS',root);
+  [['Razão social',b.razaoSocial],['CNPJ',b.cnpj],['Inscrição Estadual',b.ie||'Não informada'],['Inscrição Municipal',b.im||'Não informada']].forEach(([k,v])=>pcpElement('p',k+': '+v,root));
+  const table=pcpElement('table',undefined,root),head=pcpElement('tr',undefined,table);
+  ['Equipamento / especificação','Quantidade','Valor unitário','Valor total'].forEach(v=>pcpElement('th',v,head));
+  data.items.forEach(item=>{const row=pcpElement('tr',undefined,table);[item.name,brNumber(item.qty),'',''].forEach(v=>pcpElement('td',v,row));});
+  pcpElement('p','Favor informar preços, impostos, frete, prazo de entrega, validade da proposta e condições de pagamento.',root);win.focus();
+}
+function quotationUI(box,o,controls){
+  const model=pcpState(o).faturamentoCotacao||{direct:false,razaoSocial:'',cnpj:'',ie:'',im:''};pcpState(o).faturamentoCotacao=model;
+  pcpElement('h3','Cotação junto ao fornecedor',box);pcpElement('p','Use os equipamentos selecionados acima. O documento para o fornecedor apresenta quantidades e campos de preço para cotação.',box);
+  const label=pcpElement('label',' Faturamento direto ao cliente',box),check=pcpElement('input',undefined,label);check.type='checkbox';check.checked=!!model.direct;
+  const standard=pcpElement('p','Faturamento CompaSSS — Compasss Tecnologia | CNPJ: 28.781.740/0002-02 | IE: 11.356.281 | IM: 1.437.030-7',box);
+  const fields=pcpElement('div',undefined,box);fields.className='fin-grid';
+  [['razaoSocial','Razão social do cliente'],['cnpj','CNPJ do cliente'],['ie','Inscrição Estadual (opcional / isento)'],['im','Inscrição Municipal (opcional)']].forEach(([key,title])=>{
+    const l=pcpElement('label',title,fields),input=pcpElement('input',undefined,l);input.type='text';input.className='form-input';input.value=model[key]||'';input.maxLength=key==='razaoSocial'?200:key==='cnpj'?30:80;
+    input.oninput=()=>{model[key]=input.value;saveAll();};
+  });
+  const toggle=()=>{fields.hidden=!check.checked;fields.style.display=check.checked?'':'none';standard.hidden=check.checked;standard.style.display=check.checked?'none':'';};toggle();check.onchange=()=>{model.direct=check.checked;saveAll();toggle();};
+  const status=pcpElement('p','',box),print=pcpElement('button','Gerar cotação para fornecedor',box);print.className='btn';print.type='button';
+  print.onclick=()=>{try{quotationPrint(quotationRead(obras[o.id],controls,model));status.textContent='';}catch(e){status.textContent=e.message;}};
+  const emailLabel=pcpElement('label','E-mail do fornecedor',box),email=pcpElement('input',undefined,emailLabel);email.type='email';email.className='form-input';
+  const send=pcpElement('button','Enviar cotação em PDF',box);send.className='btn';send.type='button';
+  send.onclick=async()=>{
+    try{
+      const data=quotationRead(obras[o.id],controls,model),recipient=email.value.trim();
+      if(!recipient||!email.checkValidity())throw new Error('Informe o e-mail do fornecedor.');if(!window.pcpRpc)throw new Error('Abra o painel pelo Apps Script.');
+      if(!confirm('Enviar a solicitação de cotação para '+recipient+' com faturamento '+(data.billing.direct?'direto ao cliente':'CompaSSS')+'?'))return;
+      send.disabled=true;status.textContent='Enviando…';
+      const result=await window.pcpRpc('enviarCotacao',{obraId:o.id,revision:Number(obras[o.id]._revision||0),date:data.date,email:recipient,proposal:data.proposal,billing:data.billing,items:data.items,requestId:crypto.randomUUID()});
+      if(!result.ok)throw new Error(result.erro||'Envio não confirmado.');status.textContent='Cotação enviada em PDF para '+recipient+'.';
+    }catch(e){status.textContent=e.message;}finally{send.disabled=false;}
+  };
 }

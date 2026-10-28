@@ -23,6 +23,7 @@ function doPost(){return json_({ok:false,erro:'Use o painel autenticado.'});}
 function pcpApi(action,payload){
   requireUser_();
   if(action==='enviarCompra')return sendOrder_(payload);
+  if(action==='enviarCotacao')return sendOrder_(payload,true);
   if(action==='instalarAlertas')return installDelayAlerts_();
   var response;
   if(action==='obras'||action==='historico')response=readData_({parameter:{action:action}});
@@ -188,21 +189,21 @@ function orderHtml_(order){
   order.lines.forEach(function(l){h+='<tr><td>'+htmlEscape_(l.name)+'</td><td>'+htmlEscape_(l.qty)+'</td><td class="num">'+(l.unitCost==null?'Não informado':brMoneyServer_(l.unitCost))+'</td><td class="num">'+brMoneyServer_(l.budget)+'</td></tr>';});
   return h+'</tbody></table><p><b>Orçado dos itens selecionados: '+brMoneyServer_(order.total)+'</b></p><p>O valor total é o orçamento registrado para o item completo; não é calculado proporcionalmente à quantidade solicitada nem constitui autorização para pagamento.</p></body></html>';
 }
-function sendOrder_(request){
+function sendOrder_(request,isQuote){
   requireUser_();if(!request||!emailValid_(request.email))throw new Error('Informe um e-mail de destinatário válido.');
   if(!/^[a-zA-Z0-9-]{16,80}$/.test(String(request.requestId||'')))throw new Error('Identificador de envio inválido.');
   var lock=LockService.getScriptLock();lock.waitLock(30000);
   try{
-    var ss=database_(),log=ss.getSheetByName('Envios_Compra')||ss.insertSheet('Envios_Compra');
+    var logName=isQuote?'Envios_Cotacao':'Envios_Compra',ss=database_(),log=ss.getSheetByName(logName)||ss.insertSheet(logName);
     if(!log.getLastRow())log.appendRow(['Data UTC','Solicitação ID','Obra ID','Destinatário','Usuário','Estado']);
     var existing=log.getDataRange().getValues();
     for(var i=1;i<existing.length;i++)if(existing[i][1]===request.requestId)throw new Error('Esta solicitação já foi processada ou aguarda verificação. Confira o histórico antes de reenviar.');
-    var o=readSharedWork_(request.obraId),order=buildOrder_(o,request),pdf=HtmlService.createHtmlOutput(orderHtml_(order)).getAs(MimeType.PDF).setName('Solicitacao_de_compra.pdf');
+    var o=readSharedWork_(request.obraId),order=isQuote?buildQuotation_(o,request):buildOrder_(o,request),pdf=HtmlService.createHtmlOutput(isQuote?quotationHtml_(order):orderHtml_(order)).getAs(MimeType.PDF).setName(isQuote?'Solicitacao_de_cotacao.pdf':'Solicitacao_de_compra.pdf');
     var row=log.getLastRow()+1;log.getRange(row,1,1,6).setValues([[new Date().toISOString(),request.requestId,request.obraId,request.email,Session.getActiveUser().getEmail()||'', 'PREPARADO']]);SpreadsheetApp.flush();
     try{
-      MailApp.sendEmail({to:request.email,name:'CompaSSS — Gestão de Obras',subject:'Solicitação de compra — '+order.proposal,body:'Segue em anexo a solicitação de compra da obra '+order.project+'.\nData necessária: '+order.date.split('-').reverse().join('/')+'.',attachments:[pdf]});
+      MailApp.sendEmail({to:request.email,name:'CompaSSS — Gestão de Obras',subject:(isQuote?'Solicitação de cotação — ':'Solicitação de compra — ')+order.proposal,body:'Segue em anexo a solicitação de '+(isQuote?'cotação':'compra')+' da obra '+order.project+'.\nData necessária: '+order.date.split('-').reverse().join('/')+'.',attachments:[pdf]});
       log.getRange(row,6).setValue('ENVIADO');SpreadsheetApp.flush();return {ok:true};
-    }catch(e){try{log.getRange(row,6).setValue('VERIFICAR');SpreadsheetApp.flush();}catch(ignore){}throw new Error('Envio não confirmado. Consulte Envios_Compra antes de tentar novamente.');}
+    }catch(e){try{log.getRange(row,6).setValue('VERIFICAR');SpreadsheetApp.flush();}catch(ignore){}throw new Error('Envio não confirmado. Consulte '+logName+' antes de tentar novamente.');}
   }finally{lock.releaseLock();}
 }
 function installDelayAlerts_(){
@@ -239,3 +240,35 @@ function delayAlertsDaily_(){
 
 // Execute no editor com a conta administradora para conceder as novas permissões.
 function autorizarComprasEAlertas(){requireAdmin_();console.log('Cota diária restante: '+MailApp.getRemainingDailyQuota());}
+
+function quoteBilling_(input){
+  if(!input||input.direct!==true)return {direct:false,razaoSocial:'Compasss Tecnologia',cnpj:'28.781.740/0002-02',ie:'11.356.281',im:'1.437.030-7'};
+  var b={direct:true};['razaoSocial','cnpj','ie','im'].forEach(function(k){b[k]=String(input[k]||'').trim();});
+  if(!b.razaoSocial||b.razaoSocial.length>200||b.cnpj.replace(/\D/g,'').length!==14||b.cnpj.length>30||b.ie.length>80||b.im.length>80)throw new Error('Confira os dados de faturamento direto: razão social e CNPJ são obrigatórios.');
+  return b;
+}
+function buildQuotation_(o,request){
+  if(Number(request.revision)!==o._revision)throw new Error('A obra compartilhada foi alterada. Carregue a versão atual.');
+  var proposal=String(o.nome||'').trim();
+  if(!proposal||proposal.length>300||proposal!==request.proposal)throw new Error('Salve o nome da obra antes de enviar.');
+  if(!isoValid_(request.date))throw new Error('Informe uma data necessária válida.');
+  if(!Array.isArray(request.items)||!request.items.length||request.items.length>100)throw new Error('Selecione de 1 a 100 equipamentos.');
+  var byId={},seen={},lines=[];(o.cats&&o.cats.eq||[]).forEach(function(i){byId[i.id]=i;});
+  request.items.forEach(function(i){
+    var item=byId[i.id],qty=Number(i.qty);
+    if(!item||seen[i.id]||!Number.isFinite(qty)||qty<=0||qty>1000000)throw new Error('Equipamento ou quantidade inválida.');
+    if(String(i.name||'')!==String(item.name||''))throw new Error('A descrição do equipamento difere da base. Salve a obra antes de enviar.');
+    seen[i.id]=true;lines.push({name:String(item.name||''),qty:qty});
+  });
+  return {project:proposal,proposal:proposal,date:request.date,lines:lines,billing:quoteBilling_(request.billing)};
+}
+function quotationHtml_(order){
+  var b=order.billing;
+  var h='<html><head><meta charset="utf-8"><style>body{font:12px Arial;color:#222}h1{color:#406e2a}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #ddd}th{background:#e9f4e6}</style></head><body><h1>Solicitação de cotação</h1>';
+  h+='<p><b>Obra / proposta:</b> '+htmlEscape_(order.proposal)+'<br><b>Data necessária:</b> '+htmlEscape_(order.date.split('-').reverse().join('/'))+'</p>';
+  h+='<h2>'+(b.direct?'Faturamento direto ao cliente':'Faturamento CompaSSS')+'</h2>';
+  [['Razão social',b.razaoSocial],['CNPJ',b.cnpj],['Inscrição Estadual',b.ie||'Não informada'],['Inscrição Municipal',b.im||'Não informada']].forEach(function(p){h+='<p><b>'+p[0]+':</b> '+htmlEscape_(p[1])+'</p>';});
+  h+='<table><thead><tr><th>Equipamento / especificação</th><th>Quantidade</th><th>Valor unitário</th><th>Valor total</th></tr></thead><tbody>';
+  order.lines.forEach(function(l){h+='<tr><td>'+htmlEscape_(l.name)+'</td><td>'+Number(l.qty).toFixed(2).replace('.',',')+'</td><td></td><td></td></tr>';});
+  return h+'</tbody></table><p>Favor informar preços, impostos, frete, prazo de entrega, validade da proposta e condições de pagamento.</p></body></html>';
+}

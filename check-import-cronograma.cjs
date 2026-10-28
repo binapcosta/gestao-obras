@@ -89,3 +89,7 @@ fixed.qtdOrcada=9;fixed.unitOrcado=200;const repeat=ctx.budgetApply(healed.obra,
 const broken=importedRows.map(i=>({...i}));broken[0].quantity=NaN;assert.throws(()=>ctx.budgetApply(obra,broken,'x'));broken[0].quantity=2;broken[0].unitCost=NaN;assert.throws(()=>ctx.budgetApply(obra,broken,'x'));
 assert.ok(index.includes('qtdOrcada'));assert.ok(index.includes('unitOrcado'));
 console.log('OK: quantidade, custo unitário e total; itens legados complementados sem alterar valores existentes; validação e reimportação.');
+const defaultBill=ctx.quoteBilling(false,{razaoSocial:'Ignorar'});assert.equal(defaultBill.razaoSocial,'Compasss Tecnologia');assert.equal(defaultBill.cnpj,'28.781.740/0002-02');assert.equal(defaultBill.ie,'11.356.281');assert.equal(defaultBill.im,'1.437.030-7');
+assert.throws(()=>ctx.quoteBilling(true,{}));const directBill=ctx.quoteBilling(true,{razaoSocial:'Cliente',cnpj:'12.345.678/0001-90',ie:'ISENTO',im:''});assert.equal(directBill.direct,true);assert.equal(directBill.ie,'ISENTO');
+const quoteControls={date:{value:'30/10/2026'},rows:[{checkbox:{checked:true},qty:{value:'3,00'},item:{id:'e1',name:'Sensor',bud:''}}]};const quoteRead=ctx.quotationRead({nome:'Obra / Proposta'},quoteControls,{direct:false});assert.equal(quoteRead.items[0].qty,3);assert.equal(quoteRead.items[0].budget,undefined);assert.equal(quoteRead.billing.cnpj,defaultBill.cnpj);
+console.log('OK: cotação sem orçamento interno, faturamento padrão exato e dados obrigatórios do cliente.');
