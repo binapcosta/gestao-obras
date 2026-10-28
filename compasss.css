@@ -1,0 +1,43 @@
+/* Identidade CompaSSS conforme padrão visual corporativo. */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Open+Sans:wght@400;500;600&display=swap');
+:root{
+ --bg:#F8FAFC;--surface-1:#FFFFFF;--surface-2:#E9F4E6;
+ --border:#E2E8F0;--border-strong:#BCE0AB;
+ --text-primary:#333333;--text-secondary:#376024;--text-muted:#646D60;
+ --text-accent:#406E2A;--green:#406E2A;
+ --font-sans:'Open Sans','Segoe UI',sans-serif;
+ --shadow:none;--radius:8px;
+}
+body{line-height:1.4}
+header{height:auto;min-height:76px;border-bottom:3px solid #406E2A;padding-top:10px;padding-bottom:10px;gap:12px}
+.header-brand{flex-wrap:wrap}
+.header-brand img{width:210px;max-width:42vw;height:auto}
+.header-brand span{font-family:Montserrat,sans-serif;font-weight:600;color:#376024;font-size:14px;border-left:1px solid #BCE0AB;padding-left:14px}
+h1,h2,h3,.home-title,.modal-title,.fin-title,.card-title,.chart-title,.setup-title{font-family:Montserrat,sans-serif}
+.home-title{color:#406E2A}
+h2{font-size:20px;color:#376024;margin-bottom:14px}
+h3{font-size:16px;color:#406E2A;margin-top:22px;margin-bottom:12px}
+#pcpPanel p{margin-bottom:14px;font-size:13px;line-height:1.6}
+.btn-primary,.btn-green{background:#406E2A;border-color:#406E2A;color:#FFFFFF}
+.btn-primary:hover,.btn-green:hover{background:#376024}
+.btn:focus-visible,.form-input:focus-visible{outline:2px solid #81C361;outline-offset:2px}
+.filter-tab.active{background:#E9F4E6;border-color:#406E2A;color:#406E2A}
+.obra-card:hover{border-color:#81C361;box-shadow:none}
+.obra-card-add:hover{background:#E9F4E6;border-color:#81C361;color:#406E2A}
+.card,.stat-card,.kpi,.chart-card,.fin-section{box-shadow:none}
+.fin-section{border-top:3px solid #406E2A}
+.setup-card{background:#E9F4E6;border-color:#BCE0AB}
+.setup-card.done{background:#E9F4E6;border-color:#81C361}
+.form-input,.fin-input-wrap,.entry-name input,.entry-val input,.entry-bud input{background:#FFFFFF}
+.form-input:focus,.entry-name input:focus,.entry-val input:focus,.entry-bud input:focus{border-color:#406E2A}
+.add-btn{color:#406E2A;border-color:#BCE0AB}
+.add-btn:hover{background:#E9F4E6}
+.compass-badge{background:#406E2A}
+.fin-result.margem{background:#E9F4E6;border-color:#BCE0AB}
+.fin-result.lucro-pos{background:#E9F4E6;border-color:#81C361}
+.hist-table th{background:#406E2A;color:#FFFFFF;font-family:Montserrat,sans-serif}
+.hist-table tbody tr:nth-child(even){background:#F8FAFC}
+#pcpPanel details{border-left:4px solid #81C361;padding:14px}
+#pcpPanel summary{font-family:Montserrat,sans-serif;color:#376024;font-weight:600;cursor:pointer;padding:6px 0}
+#pcpPanel details[open] summary{margin-bottom:18px}
+@media(max-width:600px){.header-brand span{border-left:0;padding-left:0}.header-right{flex-wrap:wrap}.actions-row{justify-content:flex-start}}
