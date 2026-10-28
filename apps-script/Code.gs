@@ -264,7 +264,7 @@ function buildQuotation_(o,request){
 }
 function quotationHtml_(order){
   var b=order.billing;
-  var h='<html><head><meta charset="utf-8"><style>body{font:12px Arial;color:#222}h1{color:#406e2a}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #ddd}th{background:#e9f4e6}</style></head><body><h1>Solicitação de cotação</h1>';
+  var h='<html><head><meta charset="utf-8"><title>SOLICITAÇÃO DE COTAÇÃO</title><style>body{font:12px Arial;color:#222}h1{color:#406e2a}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #ddd}th{background:#e9f4e6}</style></head><body><h1>SOLICITAÇÃO DE COTAÇÃO</h1>';
   h+='<p><b>Obra / proposta:</b> '+htmlEscape_(order.proposal)+'<br><b>Data necessária:</b> '+htmlEscape_(order.date.split('-').reverse().join('/'))+'</p>';
   h+='<h2>'+(b.direct?'Faturamento direto ao cliente':'Faturamento CompaSSS')+'</h2>';
   [['Razão social',b.razaoSocial],['CNPJ',b.cnpj],['Inscrição Estadual',b.ie||'Não informada'],['Inscrição Municipal',b.im||'Não informada']].forEach(function(p){h+='<p><b>'+p[0]+':</b> '+htmlEscape_(p[1])+'</p>';});

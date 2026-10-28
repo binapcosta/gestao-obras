@@ -589,10 +589,10 @@ function quotationRead(o,controls,billing){
 }
 function quotationPrint(data){
   const win=window.open('','_blank');if(!win)throw new Error('Permita a abertura de janelas para gerar o documento.');
-  const d=win.document;d.title='Solicitação de cotação';const style=d.createElement('style');
+  const d=win.document;d.title='SOLICITAÇÃO DE COTAÇÃO';const style=d.createElement('style');
   style.textContent='body{font:14px Arial;color:#222;margin:30px}h1{color:#406e2a}table{width:100%;border-collapse:collapse}th,td{padding:8px;text-align:left;border-bottom:1px solid #ddd}th{background:#e9f4e6}@media print{button{display:none}}';d.head.appendChild(style);
   const root=d.body,btn=pcpElement('button','Imprimir / Salvar PDF',root);btn.onclick=()=>win.print();
-  pcpElement('h1','Solicitação de cotação',root);pcpElement('p','Obra / proposta: '+data.proposal,root);pcpElement('p','Data necessária: '+brDate(data.date),root);
+  pcpElement('h1','SOLICITAÇÃO DE COTAÇÃO',root);pcpElement('p','Obra / proposta: '+data.proposal,root);pcpElement('p','Data necessária: '+brDate(data.date),root);
   const b=data.billing;pcpElement('h2',b.direct?'Faturamento direto ao cliente':'Faturamento CompaSSS',root);
   [['Razão social',b.razaoSocial],['CNPJ',b.cnpj],['Inscrição Estadual',b.ie||'Não informada'],['Inscrição Municipal',b.im||'Não informada']].forEach(([k,v])=>pcpElement('p',k+': '+v,root));
   const table=pcpElement('table',undefined,root),head=pcpElement('tr',undefined,table);
