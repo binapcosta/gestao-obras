@@ -92,6 +92,7 @@ function renderPCP(){
   purchaseUI(panel,o);
   pcpImportUI(panel,o);
   pcpElement('h3','Cronograma — dias corridos',panel);
+  proposalUI(panel,o);
   scheduleImportUI(panel,o);
   pcpElement('p','Dependências geram alertas; as datas não são deslocadas automaticamente. A linha de base preserva o primeiro planejamento; o cronograma atual continua editável.',panel);
   const actions=pcpElement('div',undefined,panel);actions.className='actions-row';
@@ -624,5 +625,164 @@ function quotationUI(box,o,controls){
       const result=await window.pcpRpc('enviarCotacao',{obraId:o.id,revision:Number(obras[o.id]._revision||0),date:data.date,email:recipient,proposal:data.proposal,billing:data.billing,items:data.items,requestId:crypto.randomUUID()});
       if(!result.ok)throw new Error(result.erro||'Envio não confirmado.');status.textContent='Cotação enviada em PDF para '+recipient+'.';
     }catch(e){status.textContent=e.message;}finally{send.disabled=false;}
+  };
+}
+
+
+/* Planejamento assistido por regras; leitura local de PDF/DOCX. */
+function proposalNorm(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+function proposalClauses(text){
+  if(String(text||'').length>120000)throw new Error('Texto muito extenso. Use até 120.000 caracteres.');
+  let excluded=false;
+  const out=[];
+  String(text||'').split(/\r?\n|[.;]\s+/).forEach(raw=>{
+    const line=raw.trim();if(!line)return;const n=proposalNorm(line).replace(/^\d+[\s.)-]*/,'');
+    if(/^(exclusoes|itens excluidos|nao (?:estao |esta )?(?:inclus|contemplad)|fora do escopo)/.test(n))excluded=true;
+    else if(/^(escopo|servicos (?:inclus|contemplad)|itens inclus|condicoes comerciais|prazo de execucao|garantia|investimento)/.test(n))excluded=false;
+    const negative=excluded||/\b(nao|sem|excluid[oa]s?|exclus[oa]s?|fora do escopo|responsabilidade d[oa] cliente|a cargo d[oa] cliente|pelo cliente)\b/.test(n);
+    out.push({text:line,normalized:n,excluded:negative});
+  });
+  return out;
+}
+function proposalAnalyze(text,discipline){
+  if(String(text||'').trim().length<40)throw new Error('O texto é insuficiente. Confira a extração ou cole o escopo aprovado.');
+  const clauses=proposalClauses(text),positive=clauses.filter(c=>!c.excluded);
+  const rules=[
+    ['acesso','Controle de acesso',/\b(catraca|facial|controle de acesso|biometr|leitor de acesso)/],
+    ['cftv','CFTV',/\b(cftv|camera|videomonitor|digifort|hikcentral)/],
+    ['sdai','SDAI',/\b(sdai|deteccao|alarme de incendio|detector|notifier)/],
+    ['automacao','Automação',/\b(automacao|bms|hvac|fancoil|vav|bacnet|modbus|controlador)/]
+  ];
+  const active=discipline&&discipline!=='auto'?rules.filter(r=>r[0]===discipline):rules.filter(r=>positive.some(c=>r[2].test(c.normalized)));
+  if(!active.length)throw new Error('Não identifiquei a disciplina. Selecione a disciplina e confira o texto.');
+  const stages=[
+    ['validacao','Validar escopo, acessos e condições de execução',1,null],
+    ['projeto','Validar projeto e documentação técnica',2,/\b(projeto|desenho|diagrama|engenharia)\b/],
+    ['compras','Comprar e receber materiais',15,/\b(fornecimento|fornecer|compra|aquisicao|entrega de materiais)\b/],
+    ['infra','Executar infraestrutura',3,/\b(infraestrutura|eletroduto|eletrocalha|seal tube|condulete)\b/],
+    ['cabos','Lançar e identificar cabeamento',3,/\b(cabeamento|cabos?|fibra|utp)\b/]
+  ];
+  const tasks=stages.map(([id,name,days,pattern])=>{
+    const evidence=pattern?positive.find(c=>pattern.test(c.normalized)):null;
+    const exclusion=pattern?clauses.find(c=>c.excluded&&pattern.test(c.normalized)):null;
+    return {key:id,nome:name,dias:days,selected:id==='validacao'||!!evidence,evidence:evidence?evidence.text.slice(0,240):exclusion?'Revisar exclusão: '+exclusion.text.slice(0,200):'Etapa de referência: confirmar necessidade.',qtd:1,horas:0,responsavel:''};
+  });
+  active.forEach(([id,label,pattern])=>{
+    const evidence=positive.find(c=>pattern.test(c.normalized));
+    const install=positive.find(c=>pattern.test(c.normalized)&&/\b(instalacao|instalar|implantacao|substituicao|remanejamento)\b/.test(c.normalized));
+    const qtyMatch=install&&proposalNorm(install.text).match(/\b(\d{1,5}(?:,\d+)?)\s*(?:unidades?\s+(?:de\s+)?)?(cameras?|catracas?|leitores?|faciais|detectores?|fancoils?|vavs?)\b/);
+    const suggestedQty=qtyMatch?Number(qtyMatch[1].replace(',','.')):1;
+    tasks.push({key:'instalar_'+id,nome:'Instalação / implantação — '+label,dias:3,selected:!!install,evidence:(install||evidence)?.text.slice(0,240)||'Disciplina selecionada manualmente; confirmar escopo.',qtd:suggestedQty,horas:0,responsavel:''});
+    const config=positive.find(c=>/\b(configuracao|programacao|parametrizacao|integracao)\b/.test(c.normalized));
+    tasks.push({key:'config_'+id,nome:'Configuração e integração — '+label,dias:2,selected:!!config,evidence:config?config.text.slice(0,240):'Confirmar se configuração está contemplada.',qtd:1,horas:0,responsavel:''});
+  });
+  [['testes','Testar e comissionar o sistema',2,/\b(testes?|comissionamento)\b/],['entrega','Documentar e entregar a obra',1,/\b(as built|documentacao|treinamento|entrega tecnica|aceite)\b/]].forEach(([key,nome,dias,pattern])=>{
+    const evidence=positive.find(c=>pattern.test(c.normalized));tasks.push({key,nome,dias,selected:!!evidence,evidence:evidence?evidence.text.slice(0,240):'Confirmar se a etapa está contemplada.',qtd:1,horas:0,responsavel:''});
+  });
+  return {disciplines:active.map(r=>r[1]),tasks,exclusions:clauses.filter(c=>c.excluded).map(c=>c.text).slice(0,20)};
+}
+function proposalPlan(o,stages,start,source,reviewed,idFactory){
+  if(!reviewed)throw new Error('Confirme a revisão do escopo e das durações sugeridas.');
+  if(!/^\d{2}\/\d{2}\/\d{4}$/.test(start||''))throw new Error('Informe o início em dd/mm/aaaa.');
+  const iso=scheduleDate(start),selected=stages.filter(t=>t.selected);
+  if(!selected.length)throw new Error('Selecione ao menos uma etapa.');
+  const next=JSON.parse(JSON.stringify(o)),p=pcpState(next),ids=new Set(p.tarefas.map(t=>t.id));
+  let cursor=Date.parse(iso+'T12:00:00Z'),previous='',added=0;
+  if(p.tarefas.some(t=>t.proposalSource===source))throw new Error('Este texto/arquivo já gerou atividades nesta obra. Edite as atividades existentes ou use outra revisão da proposta.');
+  selected.forEach(s=>{
+    const days=Number(s.dias),qtd=Number(s.qtd),hours=Number(s.horas),name=String(s.nome||'').trim();
+    if(!name||name.length>250||!Number.isInteger(days)||days<1||days>730||!Number.isFinite(qtd)||qtd<0||!Number.isFinite(hours)||hours<0)throw new Error('Confira o nome, duração, quantidade e horas de cada etapa.');
+    let id=(idFactory||(()=>crypto.randomUUID()))();if(ids.has(id))throw new Error('Identificador de atividade repetido.');ids.add(id);
+    const inicio=new Date(cursor).toISOString().slice(0,10),fim=new Date(cursor+(days-1)*86400000).toISOString().slice(0,10);
+    p.tarefas.push({id,nome:name,responsavel:String(s.responsavel||'').slice(0,180),inicio,fim,qtd,horas:hours,qtdReal:0,horasReal:0,predecessora:previous,proposalSource:source});
+    previous=id;cursor+=days*86400000;added++;
+  });
+  if(pcpErrors(p).length)throw new Error(pcpErrors(p).join(' '));
+  if(JSON.stringify(next).length>45000)throw new Error('A obra excede o limite de 45.000 caracteres. Reduza o número de etapas.');
+  return {obra:next,added,final:new Date(cursor-86400000).toISOString().slice(0,10)};
+}
+function proposalSource(name,text){
+  let h=2166136261;for(let i=0;i<text.length;i++)h=Math.imul(h^text.charCodeAt(i),16777619);
+  return String(name||'Texto aprovado').slice(0,120)+'#'+(h>>>0).toString(16);
+}
+let proposalPdfLibrary,proposalWordLibrary;
+async function proposalExtract(file){
+  if(!file||file.size>5*1024*1024)throw new Error('Selecione um arquivo de até 5 MB.');
+  const extension=file.name.split('.').pop().toLowerCase();
+  if(extension==='txt')return file.text();
+  if(extension==='pdf'){
+    if(!proposalPdfLibrary)proposalPdfLibrary=import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs').catch(e=>{proposalPdfLibrary=null;throw e;});
+    const X=await proposalPdfLibrary;X.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+    const task=X.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}),pdf=await task.promise;
+    try{
+      if(pdf.numPages>80)throw new Error('Use uma proposta de até 80 páginas.');
+      let text='';
+      for(let i=1;i<=pdf.numPages;i++){
+        const page=await pdf.getPage(i),content=await page.getTextContent();let lastY=null;
+        for(const item of content.items){const y=item.transform&&item.transform[5];if(lastY!==null&&y!=null&&Math.abs(y-lastY)>3)text+='\n';text+=String(item.str||'')+(item.hasEOL?'\n':' ');lastY=y;}
+        text+='\n';if(text.length>120000)throw new Error('Texto muito extenso. Use somente a proposta aprovada.');
+      }
+      if(text.trim().length<40)throw new Error('PDF sem texto suficiente. Faça OCR antes ou cole o escopo abaixo.');
+      return text;
+    }finally{await pdf.destroy();}
+  }
+  if(extension==='docx'){
+    if(!window.mammoth){
+      if(!proposalWordLibrary)proposalWordLibrary=new Promise((resolve,reject)=>{
+        const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js';
+        script.onload=()=>window.mammoth?resolve(window.mammoth):reject(new Error('Leitor Word indisponível.'));script.onerror=()=>{proposalWordLibrary=null;script.remove();reject(new Error('Não foi possível carregar o leitor Word.'));};document.head.appendChild(script);
+      });
+      await proposalWordLibrary;
+    }
+    const result=await window.mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});if(result.value.length>120000)throw new Error('Texto muito extenso.');return result.value;
+  }
+  throw new Error('Use PDF, DOCX ou TXT. Para arquivos .doc, salve uma cópia em DOCX.');
+}
+function proposalUI(panel,o){
+  const box=pcpElement('details',undefined,panel);box.className='card';
+  pcpElement('summary','Gerar cronograma pela proposta aprovada',box);
+  pcpElement('p','Envie PDF com texto ou Word (.docx). A leitura local sugere etapas por regras e modelos; confira exclusões e escopo. Durações e quantidades são referências editáveis, não compromissos extraídos da proposta.',box);
+  const file=pcpElement('input',undefined,box);file.type='file';file.accept='.pdf,.docx,.txt';
+  const text=pcpElement('textarea',undefined,box);text.className='form-input';text.placeholder='Texto extraído da proposta. Você também pode colar o escopo aprovado aqui.';text.style.minHeight='150px';text.maxLength=120000;
+  const label=pcpElement('label','Disciplina: ',box),discipline=pcpElement('select',undefined,label);discipline.className='form-input';
+  [['auto','Detectar pelo texto'],['acesso','Controle de acesso'],['cftv','CFTV'],['sdai','SDAI'],['automacao','Automação']].forEach(([value,name])=>{const opt=pcpElement('option',name,discipline);opt.value=value;});discipline.value='auto';
+  const startLabel=pcpElement('label','Início previsto (dd/mm/aaaa): ',box),start=pcpElement('input',undefined,startLabel);start.type='text';start.placeholder='dd/mm/aaaa';start.className='form-input';
+  const status=pcpElement('p','',box),analyze=pcpElement('button','Analisar e sugerir etapas',box);analyze.type='button';analyze.className='btn';
+  const preview=pcpElement('div',undefined,box);preview.style.overflowX='auto';let generation=0,filename='Texto aprovado';
+  const active=()=>currentObraId===o.id&&box.isConnected;
+  function invalidate(){generation++;analyze.disabled=false;preview.replaceChildren();status.textContent='Texto alterado. Analise novamente antes de adicionar.';}
+  text.oninput=invalidate;discipline.onchange=invalidate;
+  file.onchange=async()=>{
+    const token=++generation;preview.replaceChildren();const selected=file.files[0];if(!selected)return;
+    filename=selected.name;text.value='';status.textContent='Lendo proposta…';analyze.disabled=true;
+    try{const result=await proposalExtract(selected);if(!active()||token!==generation)return;text.value=result;status.textContent='Texto extraído. Confira o conteúdo e clique em Analisar.';}
+    catch(e){if(active()&&token===generation)status.textContent=e.message+' Se necessário, cole o texto aprovado.';}
+    finally{if(active()&&token===generation)analyze.disabled=false;}
+  };
+  analyze.onclick=()=>{
+    preview.replaceChildren();try{
+      if(!active())return;const analysis=proposalAnalyze(text.value,discipline.value),source=proposalSource(filename,text.value),captured=text.value;
+      pcpElement('p','Disciplinas: '+analysis.disciplines.join(', ')+'. Datas em dias corridos; etapas selecionadas serão encadeadas na ordem abaixo.',preview);
+      if(analysis.exclusions.length){const ex=pcpElement('details',undefined,preview);pcpElement('summary','Trechos com exclusões ou condições para revisar',ex);analysis.exclusions.forEach(t=>pcpElement('p',t,ex));}
+      const table=pcpElement('table',undefined,preview);table.style.width='100%';const tr=pcpElement('tr',undefined,pcpElement('thead',undefined,table));
+      ['Usar','Etapa','Dias sugeridos','Quantidade','Horas previstas','Responsável','Referência do texto / observação'].forEach(v=>pcpElement('th',v,tr));
+      const body=pcpElement('tbody',undefined,table);
+      analysis.tasks.forEach(t=>{
+        const row=pcpElement('tr',undefined,body),check=pcpElement('input',undefined,pcpElement('td',undefined,row));check.type='checkbox';check.checked=t.selected;check.onchange=()=>t.selected=check.checked;
+        [['nome','text'],['dias','number'],['qtd','number'],['horas','number'],['responsavel','text']].forEach(([key,type])=>{
+          const input=pcpElement('input',undefined,pcpElement('td',undefined,row));input.type='text';input.className='form-input';input.value=type==='number'?brEdit(t[key]):t[key];if(type==='number')input.inputMode='decimal';
+          input.oninput=()=>{t[key]=type==='number'?brParse(input.value):input.value;};
+        });pcpElement('td',t.evidence,row);
+      });
+      const confirmLabel=pcpElement('label',' Revisei o escopo, exclusões, durações, quantidades e responsáveis.',preview),review=pcpElement('input',undefined,confirmLabel);review.type='checkbox';
+      pcpElement('p','Na instalação, uma quantidade explícita no trecho pode ser sugerida; confira-a. Nos demais casos, quantidade 1 significa etapa única. Horas 0 precisam ser preenchidas para calcular avanço ponderado. Datas e prazo contratual devem ser conciliados antes de salvar.',preview);
+      const add=pcpElement('button','Adicionar etapas ao cronograma',preview);add.type='button';add.className='btn';
+      add.onclick=()=>{try{
+        if(!active()||text.value!==captured)throw new Error('O texto mudou. Analise novamente.');saveCurrent();
+        const result=proposalPlan(obras[o.id],analysis.tasks,start.value,source,review.checked);obras[o.id]=result.obra;saveAll();renderPCP();
+        alert(result.added+' etapas adicionadas. Confira o cronograma e clique em Salvar no Sheets.');setSyncStatus('load','Cronograma preliminar gerado; revise e salve no Sheets.');
+      }catch(e){status.textContent=e.message;}};
+      status.textContent='Prévia pronta. Revise e confirme antes de adicionar.';
+    }catch(e){status.textContent=e.message;}
   };
 }

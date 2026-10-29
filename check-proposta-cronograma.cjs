@@ -1,0 +1,37 @@
+const fs=require('fs'),assert=require('assert'),vm=require('vm');
+const source=fs.readFileSync(__dirname+'/pcp.js','utf8');
+const prefix=source.slice(0,source.indexOf('const originalOpenDash='));
+const dates=source.slice(source.indexOf('function scheduleDate('),source.indexOf('function scheduleRows('));
+const feature=source.slice(source.indexOf('/* Planejamento assistido por regras;'));
+const helpers=new Function(prefix+'\n'+dates+'\nreturn {pcpState,pcpErrors,scheduleDate};')();
+const run=new Function('pcpState','pcpErrors','scheduleDate','window',feature+'\nreturn {proposalAnalyze,proposalPlan,proposalSource,proposalExtract,setPdf:lib=>proposalPdfLibrary=Promise.resolve(lib)};');
+const f=run(helpers.pcpState,helpers.pcpErrors,helpers.scheduleDate,{mammoth:{extractRawText:async()=>({value:'Escopo aprovado com instalação de 12 câmeras CFTV e testes.'})}});
+async function main(){
+const text='Escopo aprovado: fornecimento e instalação de 12 câmeras CFTV.\nLançamento de cabeamento UTP.\nConfiguração Digifort e testes de comissionamento.\nExclusões\nInfraestrutura e eletrodutos a cargo do cliente.';
+const a=f.proposalAnalyze(text,'auto');
+assert.ok(a.disciplines.includes('CFTV'));assert.equal(a.tasks.find(t=>t.key==='infra').selected,false);
+assert.equal(a.tasks.find(t=>t.key==='cabos').selected,true);assert.equal(a.tasks.find(t=>t.key==='instalar_cftv').qtd,12);
+const o={nome:'Obra',pcp:{passagem:{},tarefas:[{id:'old',nome:'Existente',qtd:1,horas:0}],baseline:{tarefas:[{id:'base',nome:'Original'}]}}};
+const before=JSON.stringify(o);let id=0;const key=f.proposalSource('A.pdf',text);
+const plan=f.proposalPlan(o,a.tasks,'29/10/2026',key,true,()=> 'new'+(++id));
+assert.equal(JSON.stringify(o),before);assert.deepEqual(plan.obra.pcp.baseline,o.pcp.baseline);assert.equal(plan.obra.pcp.tarefas[0].id,'old');
+const added=plan.obra.pcp.tarefas.slice(1);assert.equal(added[0].inicio,'2026-10-29');
+added.slice(1).forEach((t,i)=>{assert.ok(t.inicio>added[i].fim);assert.equal(t.predecessora,added[i].id);});
+assert.throws(()=>f.proposalPlan(o,a.tasks,'29/10/2026','s',false,()=> 'x'+(++id)));
+assert.throws(()=>f.proposalPlan(o,a.tasks,'31/02/2026','s',true,()=> 'x'+(++id)));
+assert.throws(()=>f.proposalPlan(o,a.tasks.map(t=>({...t,dias:1.5})),'29/10/2026','s',true,()=> 'x'+(++id)));
+assert.throws(()=>f.proposalPlan(plan.obra,a.tasks,'29/10/2026',key,true,()=> 'x'+(++id)));
+assert.throws(()=>f.proposalAnalyze('pouco texto','auto'));
+assert.throws(()=>f.proposalPlan({...o,obs:'x'.repeat(45000)},a.tasks,'29/10/2026','s',true,()=> 'x'+(++id)));
+const mock={GlobalWorkerOptions:{},getDocument:()=>({promise:Promise.resolve({numPages:1,getPage:async()=>({getTextContent:async()=>({items:[{str:'Proposta aprovada para instalação de 12 câmeras CFTV.',hasEOL:true}]})}),destroy:async()=>{}})})};
+f.setPdf(mock);
+assert.ok((await f.proposalExtract({name:'A.pdf',size:100,arrayBuffer:async()=>new ArrayBuffer(4)})).includes('12 câmeras'));
+assert.ok((await f.proposalExtract({name:'A.docx',size:100,arrayBuffer:async()=>new ArrayBuffer(4)})).includes('12 câmeras'));
+await assert.rejects(()=>f.proposalExtract({name:'A.doc',size:100}));
+await assert.rejects(()=>f.proposalExtract({name:'A.pdf',size:6*1024*1024}));
+const html=fs.readFileSync(__dirname+'/apps-script/Painel.html','utf8');
+const scripts=[...html.matchAll(/atob\("([A-Za-z0-9+/=]+)"\)/g)].map(m=>Buffer.from(m[1],'base64').toString('utf8'));
+scripts.forEach(s=>new vm.Script(s));assert.equal(scripts[2],source);
+console.log('OK: etapas e quantidades sugeridas, exclusões, revisão obrigatória, calendário e predecessoras, preservação de dados, duplicidade, limites, sintaxe e extração PDF/DOCX simulada.');
+}
+main().catch(e=>{console.error(e);process.exitCode=1;});
