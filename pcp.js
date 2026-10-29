@@ -665,7 +665,7 @@ function proposalAnalyze(text,discipline){
   const tasks=stages.map(([id,name,days,pattern])=>{
     const evidence=pattern?positive.find(c=>pattern.test(c.normalized)):null;
     const exclusion=pattern?clauses.find(c=>c.excluded&&pattern.test(c.normalized)):null;
-    return {key:id,nome:name,dias:days,selected:id==='validacao'||!!evidence,evidence:evidence?evidence.text.slice(0,240):exclusion?'Revisar exclusão: '+exclusion.text.slice(0,200):'Etapa de referência: confirmar necessidade.',qtd:1,horas:0,responsavel:''};
+    return {key:id,nome:name,dias:days,selected:id==='validacao'||!!evidence,evidence:evidence?evidence.text.slice(0,240):exclusion?'Etapa não selecionada; confirme a necessidade no escopo contratado.':'Etapa de referência: confirmar necessidade.',qtd:1,horas:0,responsavel:''};
   });
   active.forEach(([id,label,pattern])=>{
     const evidence=positive.find(c=>pattern.test(c.normalized));
@@ -795,7 +795,7 @@ function proposalUI(panel,o){
     preview.replaceChildren();try{
       if(!active())return;const analysis=proposalAnalyze(text.value,discipline.value),source=proposalSource(filename,text.value),captured=text.value;
       pcpElement('p','Disciplinas: '+analysis.disciplines.join(', ')+'. Datas em dias corridos; etapas selecionadas serão encadeadas na ordem abaixo.',preview);
-      if(analysis.exclusions.length){const ex=pcpElement('details',undefined,preview);pcpElement('summary','Trechos com exclusões ou condições para revisar',ex);analysis.exclusions.forEach(t=>pcpElement('p',t,ex));}
+
       const table=pcpElement('table',undefined,preview);table.style.width='100%';const tr=pcpElement('tr',undefined,pcpElement('thead',undefined,table));
       ['Usar','Etapa','Dias sugeridos','Quantidade','Horas previstas','Responsável','Referência do texto / observação'].forEach(v=>pcpElement('th',v,tr));
       const body=pcpElement('tbody',undefined,table);
