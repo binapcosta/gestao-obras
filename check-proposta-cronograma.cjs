@@ -4,7 +4,7 @@ const prefix=source.slice(0,source.indexOf('const originalOpenDash='));
 const dates=source.slice(source.indexOf('function scheduleDate('),source.indexOf('function scheduleRows('));
 const feature=source.slice(source.indexOf('/* Planejamento assistido por regras;'));
 const helpers=new Function(prefix+'\n'+dates+'\nreturn {pcpState,pcpErrors,scheduleDate};')();
-const run=new Function('pcpState','pcpErrors','scheduleDate','window',feature+'\nreturn {proposalAnalyze,proposalPlan,proposalSource,proposalExtract,setPdf:lib=>proposalPdfLibrary=Promise.resolve(lib)};');
+const run=new Function('pcpState','pcpErrors','scheduleDate','window',feature+'\nreturn {proposalUndo,proposalAnalyze,proposalPlan,proposalSource,proposalExtract,setPdf:lib=>proposalPdfLibrary=Promise.resolve(lib)};');
 const f=run(helpers.pcpState,helpers.pcpErrors,helpers.scheduleDate,{mammoth:{extractRawText:async()=>({value:'Escopo aprovado com instalação de 12 câmeras CFTV e testes.'})}});
 async function main(){
 const text='Escopo aprovado: fornecimento e instalação de 12 câmeras CFTV.\nLançamento de cabeamento UTP.\nConfiguração Digifort e testes de comissionamento.\nExclusões\nInfraestrutura e eletrodutos a cargo do cliente.';
@@ -23,6 +23,10 @@ assert.throws(()=>f.proposalPlan(o,a.tasks.map(t=>({...t,dias:1.5})),'29/10/2026
 assert.throws(()=>f.proposalPlan(plan.obra,a.tasks,'29/10/2026',key,true,()=> 'x'+(++id)));
 assert.throws(()=>f.proposalAnalyze('pouco texto','auto'));
 assert.throws(()=>f.proposalPlan({...o,obs:'x'.repeat(45000)},a.tasks,'29/10/2026','s',true,()=> 'x'+(++id)));
+const undo=f.proposalUndo(plan.obra,key);
+assert.equal(undo.removed,plan.added);assert.deepEqual(undo.obra.pcp.tarefas,o.pcp.tarefas);assert.deepEqual(undo.obra.pcp.baseline,o.pcp.baseline);
+const linked=JSON.parse(JSON.stringify(plan.obra));linked.pcp.tarefas[0].predecessora=added[0].id;
+assert.throws(()=>f.proposalUndo(linked,key));assert.throws(()=>f.proposalUndo(o,'inexistente'));
 const mock={GlobalWorkerOptions:{},getDocument:()=>({promise:Promise.resolve({numPages:1,getPage:async()=>({getTextContent:async()=>({items:[{str:'Proposta aprovada para instalação de 12 câmeras CFTV.',hasEOL:true}]})}),destroy:async()=>{}})})};
 f.setPdf(mock);
 assert.ok((await f.proposalExtract({name:'A.pdf',size:100,arrayBuffer:async()=>new ArrayBuffer(4)})).includes('12 câmeras'));

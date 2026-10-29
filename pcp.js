@@ -738,6 +738,17 @@ async function proposalExtract(file){
   }
   throw new Error('Use PDF, DOCX ou TXT. Para arquivos .doc, salve uma cópia em DOCX.');
 }
+
+function proposalUndo(o,source){
+  const next=JSON.parse(JSON.stringify(o)),p=pcpState(next),removed=p.tarefas.filter(t=>t.proposalSource===source);
+  if(!source||!removed.length)throw new Error('Selecione uma proposta com etapas geradas.');
+  const ids=new Set(removed.map(t=>t.id));
+  const dependents=p.tarefas.filter(t=>!ids.has(t.id)&&ids.has(t.predecessora));
+  if(dependents.length)throw new Error('Antes de desfazer, ajuste a predecessora destas atividades: '+dependents.map(t=>t.nome).join(', ')+'.');
+  p.tarefas=p.tarefas.filter(t=>!ids.has(t.id));
+  return {obra:next,removed:removed.length};
+}
+
 function proposalUI(panel,o){
   const box=pcpElement('details',undefined,panel);box.className='card';
   pcpElement('summary','Gerar cronograma pela proposta aprovada',box);
@@ -752,6 +763,27 @@ function proposalUI(panel,o){
   const active=()=>currentObraId===o.id&&box.isConnected;
   function invalidate(){generation++;analyze.disabled=false;preview.replaceChildren();status.textContent='Texto alterado. Analise novamente antes de adicionar.';}
   text.oninput=invalidate;discipline.onchange=invalidate;
+  const clear=pcpElement('button','Limpar proposta carregada',box);clear.type='button';clear.className='btn';
+  clear.onclick=()=>{
+    generation++;file.value='';text.value='';start.value='';discipline.value='auto';filename='Texto aprovado';analyze.disabled=false;preview.replaceChildren();
+    status.textContent='Proposta e prévia limpas. As atividades já adicionadas foram mantidas.';
+  };
+  const sources=[...new Set((pcpState(o).tarefas||[]).map(t=>t.proposalSource).filter(Boolean))];
+  if(sources.length){
+    const undoBox=pcpElement('div',undefined,box);undoBox.className='card';
+    pcpElement('p','Se a proposta já gerou atividades, selecione sua origem para desfazer. A linha de base será preservada.',undoBox);
+    const select=pcpElement('select',undefined,undoBox);select.className='form-input';
+    sources.forEach(s=>{const count=pcpState(o).tarefas.filter(t=>t.proposalSource===s).length,opt=pcpElement('option',s+' — '+count+' atividades',select);opt.value=s;});select.value=sources[sources.length-1];
+    const undo=pcpElement('button','Desfazer etapas da proposta selecionada',undoBox);undo.type='button';undo.className='btn btn-danger';
+    undo.onclick=()=>{try{
+      if(!active())return;saveCurrent();
+      const current=obras[o.id],tasks=pcpState(current).tarefas.filter(t=>t.proposalSource===select.value);
+      if(!tasks.length)throw new Error('Não há etapas desta proposta para desfazer.');
+      if(!confirm('Remover '+tasks.length+' atividades geradas por '+select.value+'? Isso também remove as edições e os apontamentos feitos nelas. As demais atividades e a linha de base serão mantidas.'))return;
+      const result=proposalUndo(current,select.value);obras[o.id]=result.obra;saveAll();renderPCP();
+      alert(result.removed+' atividades removidas. Clique em Salvar no Sheets para compartilhar a correção.');setSyncStatus('load','Importação desfeita localmente; salve no Sheets.');
+    }catch(e){status.textContent=e.message;}};
+  }
   file.onchange=async()=>{
     const token=++generation;preview.replaceChildren();const selected=file.files[0];if(!selected)return;
     filename=selected.name;text.value='';status.textContent='Lendo proposta…';analyze.disabled=true;
